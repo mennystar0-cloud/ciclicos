@@ -1241,25 +1241,38 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
 
                 {/* Summary boxes */}
                 <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
-                    {printMode === 'completo' ? [
-                        { label: 'Cobertura', value: `${Math.round(coveragePct)}%`, color: coveragePct >= 100 ? '#10b981' : coveragePct >= 70 ? '#f59e0b' : '#ef4444' },
-                        { label: 'Teórico', value: report.totalItems, color: '#0f172a' },
-                        { label: 'Físico', value: report.scannedItems, color: '#0ea5e9' },
-                        { label: 'Faltantes', value: `-${report.missingItems}`, color: '#ef4444' },
-                        { label: 'Sobrantes', value: `+${report.sobranteItems}`, color: '#10b981' },
-                        { label: 'SKUs OK', value: report.rows.filter(r => r.status === 'ok').length, color: '#10b981' },
-                    ] : [
-                        { label: 'SKUs escaneados', value: simplificadoRows.length, color: '#0ea5e9' },
-                        { label: 'Faltantes', value: `-${simplificadoMissing}`, color: '#ef4444' },
-                        { label: 'Sobrantes', value: `+${simplificadoSobrante}`, color: '#10b981' },
-                        { label: 'Completos', value: simplificadoOk, color: '#10b981' },
-                        { label: 'Con diferencia', value: simplificadoRows.filter(r => r.status !== 'ok').length, color: '#f59e0b' },
-                    ].map(({ label, value, color }) => (
-                        <div key={label} style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 14px', minWidth: 80, textAlign: 'center' }}>
-                            <p style={{ fontSize: 18, fontWeight: 'bold', color, margin: 0 }}>{value}</p>
-                            <p style={{ fontSize: 10, color: '#94a3b8', margin: '2px 0 0', textTransform: 'uppercase' }}>{label}</p>
-                        </div>
-                    ))}
+                    {printMode === 'completo' ? (
+                        <>
+                            {[
+                                { label: 'Cobertura', value: `${Math.round(coveragePct)}%`, color: coveragePct >= 100 ? '#10b981' : coveragePct >= 70 ? '#f59e0b' : '#ef4444' },
+                                { label: 'Teórico', value: String(report.totalItems), color: '#0f172a' },
+                                { label: 'Físico', value: String(report.scannedItems), color: '#0ea5e9' },
+                                { label: 'Faltantes', value: `-${report.missingItems}`, color: '#ef4444' },
+                                { label: 'Sobrantes', value: `+${report.sobranteItems}`, color: '#10b981' },
+                                { label: 'SKUs OK', value: String(report.rows.filter(r => r.status === 'ok').length), color: '#10b981' },
+                            ].map(item => (
+                                <div key={item.label} style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 14px', minWidth: 80, textAlign: 'center' }}>
+                                    <p style={{ fontSize: 18, fontWeight: 'bold', color: item.color, margin: 0 }}>{item.value}</p>
+                                    <p style={{ fontSize: 10, color: '#94a3b8', margin: '2px 0 0', textTransform: 'uppercase' }}>{item.label}</p>
+                                </div>
+                            ))}
+                        </>
+                    ) : (
+                        <>
+                            {[
+                                { label: 'SKUs escaneados', value: String(simplificadoRows.length), color: '#0ea5e9' },
+                                { label: 'Faltantes', value: `-${simplificadoMissing}`, color: '#ef4444' },
+                                { label: 'Sobrantes', value: `+${simplificadoSobrante}`, color: '#10b981' },
+                                { label: 'Completos', value: String(simplificadoOk), color: '#10b981' },
+                                { label: 'Con diferencia', value: String(simplificadoRows.filter(r => r.status !== 'ok').length), color: '#f59e0b' },
+                            ].map(item => (
+                                <div key={item.label} style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 14px', minWidth: 80, textAlign: 'center' }}>
+                                    <p style={{ fontSize: 18, fontWeight: 'bold', color: item.color, margin: 0 }}>{item.value}</p>
+                                    <p style={{ fontSize: 10, color: '#94a3b8', margin: '2px 0 0', textTransform: 'uppercase' }}>{item.label}</p>
+                                </div>
+                            ))}
+                        </>
+                    )}
                 </div>
 
                 {/* Area distribution */}

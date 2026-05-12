@@ -1124,6 +1124,22 @@ const ScanTab = ({ folio, catalog, colors, scans, role, addToast }: {
     );
 };
 
+// ─── PRINT STYLES ─────────────────────────────────────────────────────────────
+const PRINT_STYLES = `
+@media print {
+    body * { visibility: hidden !important; }
+    #print-report, #print-report * { visibility: visible !important; }
+    #print-report { position: fixed; top: 0; left: 0; width: 100%; padding: 24px; background: white; }
+    .no-print { display: none !important; }
+    table { border-collapse: collapse; width: 100%; font-size: 11px; }
+    th { background: #1e293b !important; color: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    tr.faltante td { background: #fef2f2 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    tr.sobrante td { background: #f0fdf4 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .summary-box { border: 1px solid #e2e8f0; padding: 8px 12px; border-radius: 6px; display: inline-block; margin-right: 8px; }
+    @page { margin: 1.5cm; size: A4 portrait; }
+}
+`;
+
 // ─── REPORT TAB ───────────────────────────────────────────────────────────────
 const ReportTab = ({ folio, scans, onTabChange, addToast }: {
     folio: Folio | null; scans: Scan[];
@@ -1131,9 +1147,10 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
 }) => {
     const [filter, setFilter] = useState<'all' | 'faltante' | 'sobrante' | 'ok'>('all');
     const [expandedKey, setExpandedKey] = useState<string | null>(null);
+    const [printMode, setPrintMode] = useState<'completo' | 'simplificado'>('completo');
 
     const report = useMemo(() => {
-        if (!folio) return { rows: [], totalItems: 0, scannedItems: 0, missingItems: 0 };
+        if (!folio) return { rows: [], totalItems: 0, scannedItems: 0, missingItems: 0, sobranteItems: 0 };
         const allKeys = new Set([...Object.keys(folio.theoreticalMap || {}), ...Object.keys(folio.existenciasMap || {})]);
         const rows = Array.from(allKeys).map(vkey => {
             const teo = folio.theoreticalMap[vkey] || 0;
@@ -1149,7 +1166,8 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
             rows,
             totalItems: rows.reduce((a, r) => a + r.teo, 0),
             scannedItems: rows.reduce((a, r) => a + r.fis, 0),
-            missingItems: rows.filter(r => r.status === 'faltante').reduce((a, r) => a + Math.abs(r.diff), 0)
+            missingItems: rows.filter(r => r.status === 'faltante').reduce((a, r) => a + Math.abs(r.diff), 0),
+            sobranteItems: rows.filter(r => r.status === 'sobrante').reduce((a, r) => a + r.diff, 0),
         };
     }, [folio, scans]);
 
@@ -1171,11 +1189,136 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
         addToast('CSV exportado', 'success');
     };
 
+    const handlePrint = (mode: 'completo' | 'simplificado') => {
+        setPrintMode(mode);
+        if (!document.getElementById('print-styles')) {
+            const style = document.createElement('style');
+            style.id = 'print-styles';
+            style.innerHTML = PRINT_STYLES;
+            document.head.appendChild(style);
+        }
+        // Small delay so React renders the correct printMode before printing
+        setTimeout(() => window.print(), 80);
+    };
+
+    // Simplificado: only rows that have at least 1 scan (fis > 0)
+    const simplificadoRows = useMemo(() =>
+        report.rows.filter(r => r.fis > 0).sort((a, b) => a.diff - b.diff),
+        [report.rows]
+    );
+    const simplificadoMissing = simplificadoRows.filter(r => r.status === 'faltante').reduce((a, r) => a + Math.abs(r.diff), 0);
+    const simplificadoSobrante = simplificadoRows.filter(r => r.status === 'sobrante').reduce((a, r) => a + r.diff, 0);
+    const simplificadoOk = simplificadoRows.filter(r => r.status === 'ok').length;
+
     if (!folio) return <div className="text-center py-12 text-slate-400"><BarChart3 className="w-12 h-12 mx-auto mb-2 opacity-30" /><p>Abre un inventario para ver el reporte</p><button onClick={() => onTabChange('folio')} className="mt-3 text-sm text-sky-500 underline">Ir a Inventarios →</button></div>;
+
+    const printDate = new Date().toLocaleString('es-MX', { dateStyle: 'long', timeStyle: 'short' });
 
     return (
         <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
+            {/* ── PRINTABLE REPORT (hidden on screen, visible on print) ── */}
+            <div id="print-report" style={{ display: 'none' }}>
+                {/* Header */}
+                <div style={{ borderBottom: '3px solid #0ea5e9', paddingBottom: 12, marginBottom: 16 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div>
+                            <h1 style={{ fontSize: 20, fontWeight: 'bold', color: '#0f172a', margin: 0 }}>
+                                Reporte {printMode === 'simplificado' ? 'Simplificado' : 'Completo'} — Inventario Cíclico
+                            </h1>
+                            <p style={{ fontSize: 13, color: '#64748b', margin: '4px 0 0' }}>{folio.name} · {folio.almacen}{folio.temporada ? ` · ${folio.temporada}` : ''}</p>
+                            {printMode === 'simplificado' && (
+                                <p style={{ fontSize: 11, color: '#f59e0b', margin: '4px 0 0', fontStyle: 'italic' }}>
+                                    Solo modelos escaneados al menos una vez · Modelos sin escaneo excluidos
+                                </p>
+                            )}
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                            <p style={{ fontSize: 11, color: '#94a3b8', margin: 0 }}>Conteo Cíclico Pro v3.1</p>
+                            <p style={{ fontSize: 11, color: '#94a3b8', margin: '2px 0 0' }}>{printDate}</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Summary boxes */}
+                <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+                    {printMode === 'completo' ? [
+                        { label: 'Cobertura', value: `${Math.round(coveragePct)}%`, color: coveragePct >= 100 ? '#10b981' : coveragePct >= 70 ? '#f59e0b' : '#ef4444' },
+                        { label: 'Teórico', value: report.totalItems, color: '#0f172a' },
+                        { label: 'Físico', value: report.scannedItems, color: '#0ea5e9' },
+                        { label: 'Faltantes', value: `-${report.missingItems}`, color: '#ef4444' },
+                        { label: 'Sobrantes', value: `+${report.sobranteItems}`, color: '#10b981' },
+                        { label: 'SKUs OK', value: report.rows.filter(r => r.status === 'ok').length, color: '#10b981' },
+                    ] : [
+                        { label: 'SKUs escaneados', value: simplificadoRows.length, color: '#0ea5e9' },
+                        { label: 'Faltantes', value: `-${simplificadoMissing}`, color: '#ef4444' },
+                        { label: 'Sobrantes', value: `+${simplificadoSobrante}`, color: '#10b981' },
+                        { label: 'Completos', value: simplificadoOk, color: '#10b981' },
+                        { label: 'Con diferencia', value: simplificadoRows.filter(r => r.status !== 'ok').length, color: '#f59e0b' },
+                    ].map(({ label, value, color }) => (
+                        <div key={label} style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 14px', minWidth: 80, textAlign: 'center' }}>
+                            <p style={{ fontSize: 18, fontWeight: 'bold', color, margin: 0 }}>{value}</p>
+                            <p style={{ fontSize: 10, color: '#94a3b8', margin: '2px 0 0', textTransform: 'uppercase' }}>{label}</p>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Area distribution */}
+                {areaChart.length > 0 && (
+                    <div style={{ marginBottom: 20 }}>
+                        <p style={{ fontSize: 11, fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase', marginBottom: 8 }}>Distribución por Área</p>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            {areaChart.map(({ area, count }) => (
+                                <div key={area} style={{ border: '1px solid #e2e8f0', borderRadius: 6, padding: '4px 10px', fontSize: 11 }}>
+                                    <span style={{ fontWeight: 'bold' }}>{area}</span>: {count} escaneos
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Main table */}
+                <table>
+                    <thead>
+                        <tr>
+                            {['Modelo', 'Color', 'Talla', 'Teórico', 'Físico', 'Dif.', 'Estado', 'Áreas'].map(h => (
+                                <th key={h} style={{ padding: '6px 8px', textAlign: 'left', fontSize: 10, fontWeight: 'bold', background: '#1e293b', color: 'white' }}>{h}</th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {(printMode === 'completo' ? report.rows.sort((a, b) => a.diff - b.diff) : simplificadoRows).map((r, i) => (
+                            <tr key={r.vkey} className={r.status} style={{ background: i % 2 === 0 ? '#f8fafc' : 'white' }}>
+                                <td style={{ padding: '5px 8px', fontSize: 10, fontWeight: 'bold', color: '#0f172a' }}>{r.mod}</td>
+                                <td style={{ padding: '5px 8px', fontSize: 10, color: '#475569' }}>{r.color}</td>
+                                <td style={{ padding: '5px 8px', fontSize: 10, color: '#475569', textAlign: 'center' }}>{r.talla}</td>
+                                <td style={{ padding: '5px 8px', fontSize: 10, textAlign: 'center', color: '#0f172a' }}>{r.teo}</td>
+                                <td style={{ padding: '5px 8px', fontSize: 10, textAlign: 'center', color: '#0ea5e9', fontWeight: 'bold' }}>{r.fis}</td>
+                                <td style={{ padding: '5px 8px', fontSize: 10, textAlign: 'center', fontWeight: 'bold', color: r.diff < 0 ? '#ef4444' : r.diff > 0 ? '#10b981' : '#94a3b8' }}>
+                                    {r.diff > 0 ? '+' : ''}{r.diff}
+                                </td>
+                                <td style={{ padding: '5px 8px', fontSize: 10 }}>
+                                    <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 9, fontWeight: 'bold', background: r.status === 'ok' ? '#d1fae5' : r.status === 'faltante' ? '#fee2e2' : '#fef3c7', color: r.status === 'ok' ? '#065f46' : r.status === 'faltante' ? '#991b1b' : '#92400e' }}>
+                                        {r.status.toUpperCase()}
+                                    </span>
+                                </td>
+                                <td style={{ padding: '5px 8px', fontSize: 9, color: '#94a3b8' }}>
+                                    {Object.entries(r.areaMap).map(([a, c]) => `${a}:${c}`).join(' ')}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+
+                {/* Footer */}
+                <div style={{ borderTop: '1px solid #e2e8f0', marginTop: 20, paddingTop: 10, display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#94a3b8' }}>
+                    <span>Conteo Cíclico Pro v3.1 · Firebase Sync</span>
+                    <span>{printMode === 'simplificado' ? `SKUs escaneados: ${simplificadoRows.length}` : `Total SKUs: ${report.rows.length}`} · Escaneos: {scans.length}</span>
+                    <span>{printDate}</span>
+                </div>
+            </div>
+
+            {/* ── SCREEN UI ── */}
+            <div className="grid grid-cols-2 gap-3 no-print">
                 <div className="bg-white rounded-xl p-4 shadow-sm border text-center"><CoverageRing pct={coveragePct} size={70} /><p className="text-xs text-slate-500 mt-1">Cobertura</p></div>
                 <div className="space-y-2">
                     <div className="bg-white rounded-xl p-3 shadow-sm border flex justify-between items-center"><div><p className="text-xs text-slate-400">Teórico</p><p className="font-bold text-slate-700">{report.totalItems}</p></div><Package size={18} className="text-slate-300" /></div>
@@ -1185,14 +1328,14 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
             </div>
 
             {top5.length > 0 && (
-                <div className="bg-red-50 rounded-xl p-4 border border-red-200">
+                <div className="bg-red-50 rounded-xl p-4 border border-red-200 no-print">
                     <p className="text-xs font-bold text-red-700 uppercase mb-2">Top 5 Faltantes</p>
                     {top5.map(r => <div key={r.vkey} className="flex justify-between text-xs py-1 border-b border-red-100 last:border-0"><span className="text-red-700">{r.mod} · {r.color} · {r.talla}</span><span className="font-bold text-red-600">{r.diff}</span></div>)}
                 </div>
             )}
 
             {areaChart.length > 0 && (
-                <div className="bg-white rounded-xl p-4 shadow-sm border">
+                <div className="bg-white rounded-xl p-4 shadow-sm border no-print">
                     <p className="text-xs font-bold text-slate-600 uppercase mb-3">Escaneos por Área</p>
                     {areaChart.map(({ area, count }) => (
                         <div key={area} className="flex items-center gap-2 mb-2">
@@ -1204,17 +1347,31 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
                 </div>
             )}
 
-            <div className="flex gap-2 flex-wrap">
+            {/* Action buttons */}
+            <div className="flex gap-2 flex-wrap no-print">
                 {(['all', 'faltante', 'sobrante', 'ok'] as const).map(f => (
                     <button key={f} onClick={() => setFilter(f)} className={`text-xs px-3 py-1.5 rounded-full border font-medium ${filter === f ? 'bg-slate-800 text-white' : 'bg-white text-slate-600'}`}>
                         {f === 'all' ? 'Todos' : f.charAt(0).toUpperCase() + f.slice(1)}
                         {f !== 'all' && <span className="ml-1">({report.rows.filter(r => r.status === f).length})</span>}
                     </button>
                 ))}
-                <button onClick={exportCSV} className="ml-auto text-xs flex items-center gap-1 text-slate-500 border px-3 py-1.5 rounded-full"><Download size={12} /> CSV</button>
             </div>
 
-            <div className="space-y-1">
+            {/* Print + CSV buttons */}
+            <div className="flex gap-2 no-print">
+                <button onClick={() => handlePrint('completo')} className="flex-1 flex items-center justify-center gap-2 bg-slate-800 text-white rounded-xl py-3 font-semibold text-sm active:scale-95 transition-transform">
+                    🖨️ Completo
+                </button>
+                <button onClick={() => handlePrint('simplificado')} className="flex-1 flex items-center justify-center gap-2 bg-sky-600 text-white rounded-xl py-3 font-semibold text-sm active:scale-95 transition-transform">
+                    📋 Simplificado
+                </button>
+                <button onClick={exportCSV} className="flex items-center gap-1 border-2 border-slate-200 text-slate-600 rounded-xl px-4 py-3 text-sm font-medium">
+                    <Download size={16} />
+                </button>
+            </div>
+
+            {/* Rows list */}
+            <div className="space-y-1 no-print">
                 {filtered.map(r => (
                     <div key={r.vkey} className="bg-white rounded-xl border overflow-hidden shadow-sm">
                         <button onClick={() => setExpandedKey(expandedKey === r.vkey ? null : r.vkey)} className="w-full text-left px-4 py-3 flex items-center gap-2">

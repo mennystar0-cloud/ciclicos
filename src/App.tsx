@@ -1569,6 +1569,12 @@ const App: React.FC = () => {
     const handleLogin = async (r: Role) => {
         setRole(r);
         if (r === 'scanner') {
+            // Auto-join last open folio
+            const f = await fbGetLastOpenFolio() as Folio | undefined;
+            if (f) {
+                setFolioId(f.id);
+                setFolio(f);
+            }
             setActiveTab('escanear');
         } else {
             setActiveTab('folio');
@@ -1605,7 +1611,7 @@ const App: React.FC = () => {
             {/* Header */}
             <header className="bg-white border-b px-4 py-3 flex justify-between items-center shadow-sm z-10 flex-shrink-0">
                 <div className="flex items-center gap-2 overflow-hidden">
-                    {folio && role === 'admin' ? (
+                    {folio ? (
                         <div className="flex flex-col">
                             <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider leading-none">Inventario Activo</span>
                             <span className="font-bold text-slate-800 text-sm truncate max-w-[140px] sm:max-w-xs">{folio.name}</span>
@@ -1627,8 +1633,7 @@ const App: React.FC = () => {
                 <ErrorBoundary tab={activeTab}>
                     {activeTab === 'folio' && role === 'admin' && <FolioTab onJoin={(id) => { setFolioId(id); setActiveTab('reporte'); }} onCreate={(id) => setFolioId(id)} addToast={addToast} colors={colors} catalog={catalog} />}
                     {activeTab === 'existencias' && role === 'admin' && <StockTab folioId={folioId} catalog={catalog} colors={colors} onUpdate={handleUpdateCatalog} addToast={addToast} />}
-                    {activeTab === 'escanear' && role === 'scanner' && <ScannerSessionTab colors={colors} catalog={catalog} addToast={addToast} />}
-                    {activeTab === 'escanear' && role === 'admin' && <ScanTab folio={folio} catalog={catalog} colors={colors} scans={scans} role={role} addToast={addToast} />}
+                    {activeTab === 'escanear' && <ScanTab folio={folio} catalog={catalog} colors={colors} scans={scans} role={role!} addToast={addToast} />}
                     {activeTab === 'sesiones' && role === 'admin' && <SessionsAdminTab addToast={addToast} />}
                     {activeTab === 'reporte' && role === 'admin' && <ReportTab folio={folio} scans={scans} onTabChange={handleTabChange} addToast={addToast} />}
                     {activeTab === 'consulta' && role === 'admin' && <QueryTab folio={folio} scans={scans} />}

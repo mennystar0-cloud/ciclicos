@@ -1,0 +1,190 @@
+import { initializeApp } from 'firebase/app';
+import {
+    getFirestore, collection, doc, setDoc, getDoc, getDocs,
+    onSnapshot, deleteDoc, query, where, orderBy, writeBatch,
+    serverTimestamp, Timestamp
+} from 'firebase/firestore';
+
+const firebaseConfig = {
+    apiKey: "AIzaSyDWo7-4YPq1pDl4cWsxqht9HeTarp6RkIM",
+    authDomain: "ciclicos-bc996.firebaseapp.com",
+    projectId: "ciclicos-bc996",
+    storageBucket: "ciclicos-bc996.firebasestorage.app",
+    messagingSenderId: "253371789405",
+    appId: "1:253371789405:web:0c70e98fa9cfd6e7c49db4"
+};
+
+const app = initializeApp(firebaseConfig);
+export const db = getFirestore(app);
+
+// ─── FOLIOS ───────────────────────────────────────────────────────────────────
+export const fbCreateFolio = async (folio: any) => {
+    await setDoc(doc(db, 'folios', folio.id), { ...folio, updatedAt: serverTimestamp() });
+};
+
+export const fbGetAllFolios = async () => {
+    const snap = await getDocs(collection(db, 'folios'));
+    return snap.docs.map(d => d.data());
+};
+
+export const fbGetLastOpenFolio = async () => {
+    const snap = await getDocs(collection(db, 'folios'));
+    const folios = snap.docs.map(d => d.data()).filter((f: any) => f.state === 'open');
+    return folios.sort((a: any, b: any) => b.createdAt - a.createdAt)[0];
+};
+
+export const fbSubscribeToFolio = (id: string, callback: (f: any) => void) => {
+    return onSnapshot(doc(db, 'folios', id), snap => {
+        if (snap.exists()) callback(snap.data());
+        else callback(null);
+    });
+};
+
+export const fbUpdateFolio = async (folio: any) => {
+    await setDoc(doc(db, 'folios', folio.id), { ...folio, updatedAt: serverTimestamp() });
+};
+
+export const fbDeleteFolio = async (folioId: string) => {
+    await deleteDoc(doc(db, 'folios', folioId));
+    // delete scans
+    const q = query(collection(db, 'scans'), where('folioId', '==', folioId));
+    const snap = await getDocs(q);
+    const batch = writeBatch(db);
+    snap.docs.forEach(d => batch.delete(d.ref));
+    await batch.commit();
+};
+
+// ─── SCANS (Inventario Cíclico) ───────────────────────────────────────────────
+export const fbAddScan = async (scan: any) => {
+    await setDoc(doc(db, 'scans', scan.id), { ...scan, createdAt: serverTimestamp() });
+    // update folio existenciasMap & areaCounters
+    const folioRef = doc(db, 'folios', scan.folioId);
+    const folioSnap = await getDoc(folioRef);
+    if (folioSnap.exists()) {
+        const folio = folioSnap.data();
+        const existenciasMap = { ...(folio.existenciasMap || {}) };
+        const areaCounters = { ...(folio.areaCounters || {}) };
+        existenciasMap[scan.vkey] = (existenciasMap[scan.vkey] || 0) + 1;
+        const currentCounter = areaCounters[scan.area] || 0;
+        areaCounters[scan.area] = currentCounter + 1;
+        await setDoc(folioRef, { ...folio, existenciasMap, areaCounters, updatedAt: serverTimestamp() });
+        return { ...scan, pos: String(currentCounter + 1) };
+    }
+    return scan;
+};
+
+export const fbDeleteScan = async (scanId: string, folioId: string, vkey: string, area: string, pos: string) => {
+    await deleteDoc(doc(db, 'scans', scanId));
+    const folioRef = doc(db, 'folios', folioId);
+    const folioSnap = await getDoc(folioRef);
+    if (folioSnap.exists()) {
+        const folio = folioSnap.data();
+        const existenciasMap = { ...(folio.existenciasMap || {}) };
+        const areaCounters = { ...(folio.areaCounters || {}) };
+        if (existenciasMap[vkey] > 0) existenciasMap[vkey]--;
+        const currentMax = areaCounters[area] || 0;
+        if (parseInt(pos) === currentMax) areaCounters[area] = Math.max(0, currentMax - 1);
+        await setDoc(folioRef, { ...folio, existenciasMap, areaCounters, updatedAt: serverTimestamp() });
+    }
+};
+
+export const fbGetScans = async (folioId: string) => {
+    const q = query(collection(db, 'scans'), where('folioId', '==', folioId), orderBy('ts', 'desc'));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => d.data());
+};
+
+export const fbSubscribeToScans = (folioId: string, callback: (scans: any[]) => void) => {
+    const q = query(collection(db, 'scans'), where('folioId', '==', folioId), orderBy('ts', 'desc'));
+    return onSnapshot(q, snap => callback(snap.docs.map(d => d.data())));
+};
+
+// ─── SESIONES DE SCANNER (Escaneos Independientes) ────────────────────────────
+export const fbCreateScanSession = async (session: any) => {
+    await setDoc(doc(db, 'scanSessions', session.id), { ...session, createdAt: serverTimestamp() });
+};
+
+export const fbAddSessionScan = async (sessionId: string, scan: any) => {
+    const sessionRef = doc(db, 'scanSessions', sessionId);
+    const scanRef = doc(db, 'scanSessions', sessionId, 'items', scan.id);
+    await setDoc(scanRef, { ...scan, createdAt: serverTimestamp() });
+    // update count in session
+    const snap = await getDoc(sessionRef);
+    if (snap.exists()) {
+        const session = snap.data();
+        await setDoc(sessionRef, { ...session, count: (session.count || 0) + 1, updatedAt: serverTimestamp() });
+    }
+};
+
+export const fbSubscribeToSession = (sessionId: string, callback: (session: any) => void) => {
+    return onSnapshot(doc(db, 'scanSessions', sessionId), snap => {
+        if (snap.exists()) callback(snap.data());
+        else callback(null);
+    });
+};
+
+export const fbSubscribeToSessionItems = (sessionId: string, callback: (items: any[]) => void) => {
+    const q = query(
+        collection(db, 'scanSessions', sessionId, 'items'),
+        orderBy('ts', 'desc')
+    );
+    return onSnapshot(q, snap => callback(snap.docs.map(d => d.data())));
+};
+
+export const fbGetAllSessions = async () => {
+    const snap = await getDocs(collection(db, 'scanSessions'));
+    return snap.docs.map(d => d.data());
+};
+
+export const fbSubscribeToAllSessions = (callback: (sessions: any[]) => void) => {
+    return onSnapshot(collection(db, 'scanSessions'), snap => {
+        callback(snap.docs.map(d => d.data()).sort((a: any, b: any) => b.createdAt?.seconds - a.createdAt?.seconds));
+    });
+};
+
+export const fbDeleteSession = async (sessionId: string) => {
+    // delete items subcollection
+    const itemsSnap = await getDocs(collection(db, 'scanSessions', sessionId, 'items'));
+    const batch = writeBatch(db);
+    itemsSnap.docs.forEach(d => batch.delete(d.ref));
+    batch.delete(doc(db, 'scanSessions', sessionId));
+    await batch.commit();
+};
+
+export const fbGetSessionItems = async (sessionId: string) => {
+    const q = query(collection(db, 'scanSessions', sessionId, 'items'), orderBy('ts', 'desc'));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => d.data());
+};
+
+// ─── SETTINGS ─────────────────────────────────────────────────────────────────
+export const fbSaveSettings = async (key: string, value: any) => {
+    await setDoc(doc(db, 'settings', key), { value, updatedAt: serverTimestamp() });
+};
+
+export const fbLoadSettings = async (key: string) => {
+    const snap = await getDoc(doc(db, 'settings', key));
+    return snap.exists() ? snap.data().value : null;
+};
+
+// ─── BACKUP ───────────────────────────────────────────────────────────────────
+export const fbGetFullDump = async () => {
+    const [folios, scans, sessions] = await Promise.all([
+        getDocs(collection(db, 'folios')),
+        getDocs(collection(db, 'scans')),
+        getDocs(collection(db, 'scanSessions')),
+    ]);
+    return {
+        timestamp: Date.now(),
+        folios: folios.docs.map(d => d.data()),
+        scans: scans.docs.map(d => d.data()),
+        sessions: sessions.docs.map(d => d.data()),
+    };
+};
+
+export const fbRestoreFullDump = async (dump: any) => {
+    const batch = writeBatch(db);
+    dump.folios?.forEach((f: any) => batch.set(doc(db, 'folios', f.id), f));
+    dump.scans?.forEach((s: any) => batch.set(doc(db, 'scans', s.id), s));
+    await batch.commit();
+};

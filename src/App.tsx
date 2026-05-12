@@ -1,13 +1,19 @@
-
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { database } from './db.ts';
+import {
+    fbCreateFolio, fbGetAllFolios, fbGetLastOpenFolio, fbSubscribeToFolio,
+    fbUpdateFolio, fbDeleteFolio, fbAddScan, fbDeleteScan, fbGetScans,
+    fbSubscribeToScans, fbSaveSettings, fbLoadSettings, fbGetFullDump,
+    fbRestoreFullDump, fbCreateScanSession, fbAddSessionScan,
+    fbSubscribeToSession, fbSubscribeToSessionItems, fbSubscribeToAllSessions,
+    fbDeleteSession, fbGetSessionItems
+} from './firebase.ts';
 import type { Role, Tab, Folio, Catalog, ColorMap, Scan, StockMap } from './types.ts';
 import {
     tryDecodeStructuredBarcode, formatDate, keyOf, splitKey, getSizeCode,
     canonical, cleanModel, detectCategoryBySize, generateBarcode
 } from './utils.ts';
 
-// ─── LUCIDE ICONS (inline SVG wrappers) ──────────────────────────────────────
+// ─── ICONS ───────────────────────────────────────────────────────────────────
 const Icon = ({ d, size = 20, className = '', strokeWidth = 2 }: { d: string | string[]; size?: number; className?: string; strokeWidth?: number }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className}>
         {Array.isArray(d) ? d.map((p, i) => <path key={i} d={p} />) : <path d={d} />}
@@ -31,41 +37,53 @@ const Check = (p: any) => <Icon {...p} d="M20 6L9 17l-5-5" />;
 const Camera = (p: any) => <Icon {...p} d={['M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z','M12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z']} />;
 const CameraOff = (p: any) => <Icon {...p} d={['M1 1l22 22','M21 21H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3m3-3h6l2 3h4a2 2 0 0 1 2 2v9.34','M8 8a4 4 0 0 0 5.66 5.66']} />;
 const Undo2 = (p: any) => <Icon {...p} d={['M9 14 4 9l5-5','M4 9h10.5a5.5 5.5 0 0 1 0 11H11']} />;
-const XCircle = (p: any) => <Icon {...p} d={['M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z','M15 9l-6 6','M9 9l6 6']} />;
-const ArrowRight = (p: any) => <Icon {...p} d={['M5 12h14','M12 5l7 7-7 7']} />;
-const ShieldCheck = (p: any) => <Icon {...p} d={['M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z','M9 12l2 2 4-4']} />;
-const Zap = (p: any) => <Icon {...p} d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />;
-const Award = (p: any) => <Icon {...p} d={['M12 15a7 7 0 1 0 0-14 7 7 0 0 0 0 14z','M8.21 13.89L7 23l5-3 5 3-1.21-9.12']} />;
-const Timer = (p: any) => <Icon {...p} d={['M12 22a9 9 0 1 0 0-18 9 9 0 0 0 0 18z','M12 6v6l4 2','M9.5 2h5','M12 2v3']} />;
-const RotateCcw = (p: any) => <Icon {...p} d={['M3 2v6h6','M3.05 13A9 9 0 1 0 6 5.3L3 8']} />;
-const Eye = (p: any) => <Icon {...p} d={['M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z','M12 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6z']} />;
 const X = (p: any) => <Icon {...p} d="M18 6L6 18M6 6l12 12" />;
 const MapPin = (p: any) => <Icon {...p} d={['M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z','M12 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z']} />;
-const Gift = (p: any) => <Icon {...p} d={['M20 12v10H4V12','M22 7H2v5h20V7z','M12 22V7','M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z','M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z']} />;
 const Package = (p: any) => <Icon {...p} d={['M16.5 9.4l-9-5.19M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z','M3.27 6.96L12 12.01l8.73-5.05','M12 22.08V12']} />;
 const ChevronDown = (p: any) => <Icon {...p} d="M6 9l6 6 6-6" />;
 const ChevronUp = (p: any) => <Icon {...p} d="M18 15l-6-6-6 6" />;
 const BookOpen = (p: any) => <Icon {...p} d={['M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z','M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z']} />;
-const TrendingUp = (p: any) => <Icon {...p} d={['M23 6l-9.5 9.5-5-5L1 18','M17 6h6v6']} />;
-const TrendingDown = (p: any) => <Icon {...p} d={['M23 18l-9.5-9.5-5 5L1 6','M17 18h6v-6']} />;
-const Minus = (p: any) => <Icon {...p} d="M5 12h14" />;
+const Zap = (p: any) => <Icon {...p} d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />;
+const Timer = (p: any) => <Icon {...p} d={['M12 22a9 9 0 1 0 0-18 9 9 0 0 0 0 18z','M12 6v6l4 2','M9.5 2h5','M12 2v3']} />;
+const Eye = (p: any) => <Icon {...p} d={['M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z','M12 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6z']} />;
 const MessageSquare = (p: any) => <Icon {...p} d={['M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z']} />;
 const Volume2 = (p: any) => <Icon {...p} d={['M11 5L6 9H2v6h4l5 4V5z','M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07']} />;
 const VolumeX = (p: any) => <Icon {...p} d={['M11 5L6 9H2v6h4l5 4V5z','M23 9l-6 6','M17 9l6 6']} />;
-const Share2 = (p: any) => <Icon {...p} d={['M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8','M16 6l-4-4-4 4','M12 2v13']} />;
 const AlertTriangle = (p: any) => <Icon {...p} d={['M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z','M12 9v4','M12 17h.01']} />;
-const Info = (p: any) => <Icon {...p} d={['M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z','M12 16v-4','M12 8h.01']} />;
-const Sparkles = (p: any) => <Icon {...p} d={['M12 3l1.88 5.76 5.62.82-4.08 3.95.97 5.6L12 16.5l-5.39 2.63.97-5.6L3.5 9.58l5.62-.82z']} />;
-const RefreshCw = (p: any) => <Icon {...p} d={['M23 4v6h-6','M1 20v-6h6','M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15']} />;
+const ShieldCheck = (p: any) => <Icon {...p} d={['M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z','M9 12l2 2 4-4']} />;
+const ClipboardList = (p: any) => <Icon {...p} d={['M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2','M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2','M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2','M9 12h6','M9 16h4']} />;
 const Lock = (p: any) => <Icon {...p} d={['M19 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2z','M17 11V7a5 5 0 0 0-10 0v4']} />;
 const Unlock = (p: any) => <Icon {...p} d={['M19 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2z','M17 11V7a5 5 0 0 0-9.9-1']} />;
-const ClipboardList = (p: any) => <Icon {...p} d={['M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2','M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2','M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2','M9 12h6','M9 16h4']} />;
+const Sparkles = (p: any) => <Icon {...p} d={['M12 3l1.88 5.76 5.62.82-4.08 3.95.97 5.6L12 16.5l-5.39 2.63.97-5.6L3.5 9.58l5.62-.82z']} />;
+const Users = (p: any) => <Icon {...p} d={['M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2','M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z','M23 21v-2a4 4 0 0 0-3-3.87','M16 3.13a4 4 0 0 1 0 7.75']} />;
+const PlayCircle = (p: any) => <Icon {...p} d={['M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z','M10 8l6 4-6 4V8z']} />;
+const RefreshCw = (p: any) => <Icon {...p} d={['M23 4v6h-6','M1 20v-6h6','M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15']} />;
+const Wifi = (p: any) => <Icon {...p} d={['M5 12.55a11 11 0 0 1 14.08 0','M1.42 9a16 16 0 0 1 21.16 0','M8.53 16.11a6 6 0 0 1 6.95 0','M12 20h.01']} />;
+const ArrowRight = (p: any) => <Icon {...p} d={['M5 12h14','M12 5l7 7-7 7']} />;
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 type ToastType = 'success' | 'error' | 'info' | 'warning';
 interface Toast { id: string; msg: string; type: ToastType; }
+interface ScanSession {
+    id: string;
+    area: string;
+    operator: string;
+    createdAt: any;
+    count: number;
+}
+interface SessionItem {
+    id: string;
+    sessionId: string;
+    code: string;
+    ts: number;
+    mod?: string;
+    color?: string;
+    talla?: string;
+    vkey?: string;
+    recognized: boolean;
+}
 
-// ─── DEFAULT COLORS MAP ────────────────────────────────────────────────────
+// ─── DEFAULT COLORS ──────────────────────────────────────────────────────────
 const DEFAULT_COLORS: ColorMap = {
     'IVORY': '980', 'ORO': '090', 'MIEL': '071', 'MULTICOLOR': '861', 'NEGRO': '078',
     'CAMEL': '060', 'VINO': '105', 'AZUL': '349', 'ROJO': '095', 'MOSTAZA': '075',
@@ -77,62 +95,46 @@ const DEFAULT_COLORS: ColorMap = {
     'NUDE': '726', 'OCRE': '787', 'LILA': '172', 'ARENA': '009', 'BEIGE': '031',
     'TRANSPARENTE': '644', 'METALICO': '965', 'SALMON': '890', 'SHEDRON': '207',
     'DURAZNO': '620', 'LADRILLO': '116', 'TABACO': '134', 'ESTAMPADO': '204',
-    'AZUL CELESTE': '862', 'AZUL CIELO': '011', 'COÑAC': '382', 'MOKA': '318',
-    'KAQUI': '159', 'ANTIMONIO': '008', 'GRIS JASPE': '964', 'AZUL INDIGO': '446',
     'AQUA': '350', 'NARANJA': '076', 'TOPO': '368', 'TAUPE': '995', 'VERDE JADE': '211',
     'BUGAMBILIA': '875', 'LIMA': '815', 'VERDE ESMERALDA': '313', 'TEAL': '916',
     'MANGO': '129', 'ANIMAL PRINT': '576', 'LIMON': '661', 'VERDE NEON': '781',
     'NARANJA NEON': '677', 'VERDE BOSQUE': '483', 'CANELA': '324', 'VERDE OLIVO': '700',
     'FRESA': '001', 'FUCSIA': '493', 'PERLA': '092', 'VIOLETA': '454', 'BRONCE': '045',
-    'MAUVE': '545', 'MORADO': '072', 'GRIS OXFORD': '398', 'SIENA': '444',
-    'PAJA': '331', 'AVELLANA': '785', 'NATURAL': '077', 'CEREZA': '690',
-    'PETROLEO': '017', 'TURQUESA': '316', 'CRUDO': '628', 'MARFIL': '176',
-    'JADE': '542', 'PIEL': '566', 'BURGUNDY': '179', 'DORADO': '133',
-    'ROSA CHICLE': '544', 'LEOPARDO': '502', 'UVA': '288', 'TERRACOTA': '445',
-    'AMBAR': '919', 'MAPLE': '388', 'GUINDA': '323', 'MARSALA': '391',
-    'MANDARINA': '343', 'BERENJENA': '557', 'COBRE': '263', 'LAVANDA': '335',
-    'TORNASOL': '548', 'MALVA': '706', 'CIRUELA': '411', 'PURPURA': '486',
+    'MAUVE': '545', 'MORADO': '072', 'TURQUESA': '316', 'DORADO': '133',
+    'LAVANDA': '335', 'CIRUELA': '411', 'MANDARINA': '343', 'TERRACOTA': '445',
+    'AMBAR': '919', 'GUINDA': '323', 'MARSALA': '391', 'COBRE': '263',
 };
 
 // ─── TOAST SYSTEM ────────────────────────────────────────────────────────────
 const ToastContainer = ({ toasts, onRemove }: { toasts: Toast[]; onRemove: (id: string) => void }) => (
-    <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 max-w-xs w-full">
+    <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 max-w-xs w-full pointer-events-none">
         {toasts.map(t => (
-            <div key={t.id} className={`flex items-start gap-2 p-3 rounded-xl shadow-lg text-white text-sm animate-slide-in ${
-                t.type === 'success' ? 'bg-emerald-500' :
-                t.type === 'error' ? 'bg-red-500' :
-                t.type === 'warning' ? 'bg-amber-500' : 'bg-sky-500'
-            }`}>
+            <div key={t.id} className={`flex items-start gap-2 p-3 rounded-xl shadow-lg text-white text-sm pointer-events-auto ${
+                t.type === 'success' ? 'bg-emerald-500' : t.type === 'error' ? 'bg-red-500' :
+                t.type === 'warning' ? 'bg-amber-500' : 'bg-sky-500'}`}>
                 <span className="flex-1">{t.msg}</span>
-                <button onClick={() => onRemove(t.id)} className="opacity-70 hover:opacity-100 flex-shrink-0"><X size={14} /></button>
+                <button onClick={() => onRemove(t.id)}><X size={14} /></button>
             </div>
         ))}
     </div>
 );
 
 // ─── CONFETTI ─────────────────────────────────────────────────────────────────
-const ConfettiPiece = ({ style }: { style: React.CSSProperties }) => (
-    <div className="fixed pointer-events-none z-[200] w-3 h-3 rounded-sm animate-confetti" style={style} />
-);
 const Confetti = ({ active }: { active: boolean }) => {
     if (!active) return null;
-    const pieces = Array.from({ length: 60 }, (_, i) => ({
-        id: i,
-        style: {
-            left: `${Math.random() * 100}vw`,
-            top: '-20px',
-            background: ['#f59e0b', '#10b981', '#3b82f6', '#ef4444', '#8b5cf6', '#ec4899'][i % 6],
-            animationDuration: `${0.8 + Math.random() * 1.2}s`,
-            animationDelay: `${Math.random() * 0.5}s`,
-            transform: `rotate(${Math.random() * 360}deg)`,
-        }
-    }));
-    return <>{pieces.map(p => <ConfettiPiece key={p.id} style={p.style} />)}</>;
+    return <>{Array.from({ length: 50 }, (_, i) => (
+        <div key={i} className="fixed pointer-events-none z-[200] w-3 h-3 rounded-sm" style={{
+            left: `${Math.random() * 100}vw`, top: '-20px',
+            background: ['#f59e0b','#10b981','#3b82f6','#ef4444','#8b5cf6','#ec4899'][i % 6],
+            animation: `confetti ${0.8 + Math.random() * 1.2}s ${Math.random() * 0.5}s linear forwards`,
+            transform: `rotate(${Math.random() * 360}deg)`
+        }} />
+    ))}</>;
 };
 
 // ─── STEPPER ─────────────────────────────────────────────────────────────────
 const Stepper = ({ steps, current }: { steps: string[]; current: number }) => (
-    <div className="flex items-center gap-0 mb-4 overflow-x-auto">
+    <div className="flex items-center mb-4 overflow-x-auto">
         {steps.map((s, i) => (
             <React.Fragment key={i}>
                 <div className={`flex flex-col items-center flex-shrink-0 ${i <= current ? 'text-sky-600' : 'text-slate-300'}`}>
@@ -183,6 +185,472 @@ const CoverageRing = ({ pct, size = 80 }: { pct: number; size?: number }) => {
     );
 };
 
+// ─── SCANNER SESSION TAB ──────────────────────────────────────────────────────
+const ScannerSessionTab = ({ colors, catalog, addToast }: {
+    colors: ColorMap; catalog: Catalog;
+    addToast: (m: string, t?: ToastType) => void;
+}) => {
+    const [phase, setPhase] = useState<'menu' | 'scanning'>('menu');
+    const [currentSession, setCurrentSession] = useState<ScanSession | null>(null);
+    const [sessionItems, setSessionItems] = useState<SessionItem[]>([]);
+    const [newArea, setNewArea] = useState('');
+    const [newOperator, setNewOperator] = useState(() => localStorage.getItem('conteo:user') || '');
+    const [barcode, setBarcode] = useState('');
+    const [flash, setFlash] = useState<'ok' | 'err' | null>(null);
+    const [lastScan, setLastScan] = useState<any>(null);
+    const [streak, setStreak] = useState(0);
+    const [soundOn, setSoundOn] = useState(true);
+    const [cameraOn, setCameraOn] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [savedSessions, setSavedSessions] = useState<ScanSession[]>([]);
+    const inputRef = useRef<HTMLInputElement>(null);
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const streamRef = useRef<MediaStream | null>(null);
+    const scanLoopRef = useRef<number | null>(null);
+
+    // Load saved sessions for this device
+    useEffect(() => {
+        const savedId = localStorage.getItem('conteo:sessionId');
+        if (savedId) {
+            // subscribe to existing session
+            const unsub = fbSubscribeToSession(savedId, (s) => {
+                if (s) setCurrentSession(s as ScanSession);
+            });
+            const unsubItems = fbSubscribeToSessionItems(savedId, (items) => {
+                setSessionItems(items as SessionItem[]);
+            });
+            setPhase('scanning');
+            return () => { unsub(); unsubItems(); };
+        }
+    }, []);
+
+    const playBeep = useCallback((ok: boolean) => {
+        if (!soundOn) return;
+        try {
+            const ctx = new AudioContext();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain); gain.connect(ctx.destination);
+            osc.frequency.value = ok ? 880 : 330;
+            osc.type = ok ? 'sine' : 'square';
+            gain.gain.setValueAtTime(0.3, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+            osc.start(); osc.stop(ctx.currentTime + 0.2);
+        } catch {}
+    }, [soundOn]);
+
+    const startNewSession = async () => {
+        if (!newArea.trim()) { addToast('Escribe el área a escanear', 'warning'); return; }
+        if (!newOperator.trim()) { addToast('Escribe tu nombre', 'warning'); return; }
+        setLoading(true);
+        // Delete previous session if exists
+        const prevId = localStorage.getItem('conteo:sessionId');
+        if (prevId) {
+            await fbDeleteSession(prevId).catch(() => {});
+        }
+        const id = 'SS-' + Date.now().toString(36).toUpperCase();
+        const session: ScanSession = {
+            id, area: newArea.trim().toUpperCase(),
+            operator: newOperator.trim(),
+            createdAt: Date.now(), count: 0
+        };
+        await fbCreateScanSession(session);
+        localStorage.setItem('conteo:sessionId', id);
+        localStorage.setItem('conteo:user', newOperator.trim());
+        setCurrentSession(session);
+        setSessionItems([]);
+        setStreak(0);
+        setLoading(false);
+        setPhase('scanning');
+        addToast(`Sesión iniciada en ${session.area}`, 'success');
+
+        // subscribe
+        fbSubscribeToSession(id, (s) => { if (s) setCurrentSession(s as ScanSession); });
+        fbSubscribeToSessionItems(id, (items) => setSessionItems(items as SessionItem[]));
+
+        setTimeout(() => inputRef.current?.focus(), 300);
+    };
+
+    const handleScan = useCallback(async (code: string) => {
+        if (!currentSession) return;
+        const clean = code.trim();
+        if (!clean) return;
+        setBarcode('');
+
+        let recognized = false;
+        let mod = '', color = '', talla = '', vkey = '';
+
+        // Try catalog
+        let item = catalog.byBarcode[clean];
+        if (!item) {
+            const decoded = tryDecodeStructuredBarcode(clean, colors);
+            if (decoded) item = { mod: decoded.mod, color: decoded.color, talla: decoded.talla, vkey: decoded.vkey, category: decoded.category };
+        }
+        if (item) { recognized = true; mod = item.mod; color = item.color; talla = item.talla; vkey = item.vkey; }
+
+        const scanItem: SessionItem = {
+            id: crypto.randomUUID(),
+            sessionId: currentSession.id,
+            code: clean, ts: Date.now(),
+            recognized, mod, color, talla, vkey
+        };
+
+        await fbAddSessionScan(currentSession.id, scanItem);
+        setFlash(recognized ? 'ok' : 'err');
+        if (recognized) {
+            setStreak(s => s + 1);
+            playBeep(true);
+            if (navigator.vibrate) navigator.vibrate(30);
+        } else {
+            setStreak(0);
+            playBeep(false);
+            if (navigator.vibrate) navigator.vibrate([50, 30, 50]);
+        }
+        setLastScan({ ...scanItem });
+        setTimeout(() => { setFlash(null); inputRef.current?.focus(); }, 600);
+    }, [currentSession, catalog, colors, playBeep]);
+
+    const handleUndo = async () => {
+        if (!currentSession || sessionItems.length === 0) { addToast('Nada que deshacer', 'info'); return; }
+        // delete last item from subcollection
+        const last = sessionItems[0];
+        try {
+            const { getFirestore, doc, deleteDoc } = await import('firebase/firestore');
+            const { db } = await import('./firebase.ts');
+            await deleteDoc(doc(db, 'scanSessions', currentSession.id, 'items', last.id));
+            // update count
+            const { setDoc, getDoc } = await import('firebase/firestore');
+            const ref = doc(db, 'scanSessions', currentSession.id);
+            const snap = await getDoc(ref);
+            if (snap.exists()) {
+                await setDoc(ref, { ...snap.data(), count: Math.max(0, (snap.data().count || 1) - 1) });
+            }
+            setStreak(s => Math.max(0, s - 1));
+            addToast('Último escaneo deshecho', 'info');
+        } catch { addToast('Error al deshacer', 'error'); }
+    };
+
+    const startCamera = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+            streamRef.current = stream;
+            if (videoRef.current) videoRef.current.srcObject = stream;
+            if ('BarcodeDetector' in window) {
+                const detector = new (window as any).BarcodeDetector({ formats: ['ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a'] });
+                const loop = async () => {
+                    if (videoRef.current) {
+                        const codes = await detector.detect(videoRef.current).catch(() => []);
+                        if (codes.length > 0) await handleScan(codes[0].rawValue);
+                    }
+                    scanLoopRef.current = requestAnimationFrame(loop);
+                };
+                loop();
+            }
+            setCameraOn(true);
+        } catch { addToast('No se pudo acceder a la cámara', 'error'); }
+    };
+
+    const stopCamera = () => {
+        if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
+        if (scanLoopRef.current) cancelAnimationFrame(scanLoopRef.current);
+        setCameraOn(false);
+    };
+
+    const exportCSV = () => {
+        const header = 'Código,Modelo,Color,Talla,Reconocido,Fecha\n';
+        const rows = sessionItems.map(s =>
+            `${s.code},${s.mod || ''},${s.color || ''},${s.talla || ''},${s.recognized ? 'Sí' : 'No'},${formatDate(s.ts)}`
+        ).join('\n');
+        const blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `escaneo-${currentSession?.area}-${currentSession?.operator}-${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+        addToast('CSV exportado', 'success');
+    };
+
+    const confirmNewSession = () => {
+        if (!confirm('¿Iniciar nuevo escaneo? Se borrarán los escaneos actuales.')) return;
+        localStorage.removeItem('conteo:sessionId');
+        setCurrentSession(null);
+        setSessionItems([]);
+        setPhase('menu');
+        setNewArea('');
+        setStreak(0);
+        stopCamera();
+    };
+
+    // ── MENU PHASE ──
+    if (phase === 'menu') return (
+        <div className="space-y-6">
+            <div className="bg-gradient-to-br from-sky-500 to-sky-700 rounded-2xl p-6 text-white text-center">
+                <QrCode size={40} className="mx-auto mb-2 opacity-90" />
+                <h2 className="text-xl font-bold">Nuevo Escaneo</h2>
+                <p className="text-sky-200 text-sm mt-1">Escaneo independiente — se sincroniza en tiempo real con el Admin</p>
+            </div>
+
+            <div className="bg-white rounded-xl border p-5 shadow-sm space-y-4">
+                <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1 mb-1">
+                        <MapPin size={12} /> Área a escanear *
+                    </label>
+                    <input
+                        className="w-full border-2 border-sky-200 rounded-xl p-3 text-base focus:outline-none focus:border-sky-400 font-medium"
+                        placeholder="Ej: ÁREA-A, BODEGA, PISO 2..."
+                        value={newArea}
+                        onChange={e => setNewArea(e.target.value.toUpperCase())}
+                    />
+                    <div className="flex flex-wrap gap-1 mt-2">
+                        {['ÁREA-A','ÁREA-B','ÁREA-C','BODEGA','PISO 1','PISO 2'].map(a => (
+                            <button key={a} onClick={() => setNewArea(a)} className="text-xs bg-sky-50 text-sky-600 border border-sky-200 px-2 py-1 rounded-full">{a}</button>
+                        ))}
+                    </div>
+                </div>
+                <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1 mb-1">
+                        <Users size={12} /> Operador *
+                    </label>
+                    <input
+                        className="w-full border-2 border-sky-200 rounded-xl p-3 text-base focus:outline-none focus:border-sky-400"
+                        placeholder="Tu nombre"
+                        value={newOperator}
+                        onChange={e => setNewOperator(e.target.value)}
+                    />
+                </div>
+                <button
+                    onClick={startNewSession}
+                    disabled={loading}
+                    className="w-full bg-sky-500 text-white rounded-xl py-4 font-bold text-lg active:scale-95 transition-transform disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                    <PlayCircle size={22} /> {loading ? 'Iniciando...' : 'Iniciar Escaneo'}
+                </button>
+            </div>
+        </div>
+    );
+
+    // ── SCANNING PHASE ──
+    return (
+        <div className={`space-y-4 ${flash === 'ok' ? 'bg-emerald-50' : flash === 'err' ? 'bg-red-50' : ''} rounded-xl transition-colors duration-300`}>
+            {/* Session header */}
+            <div className="bg-white rounded-xl border p-4 shadow-sm flex justify-between items-center">
+                <div>
+                    <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
+                        <span className="font-bold text-slate-800">{currentSession?.area}</span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">{currentSession?.operator} · <span className="font-bold text-sky-600">{sessionItems.length}</span> escaneos</p>
+                </div>
+                <div className="flex gap-2">
+                    <button onClick={exportCSV} className="flex items-center gap-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-lg font-semibold">
+                        <Download size={14} /> CSV
+                    </button>
+                    <button onClick={confirmNewSession} className="flex items-center gap-1 text-xs bg-amber-50 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-lg font-semibold">
+                        <RefreshCw size={14} /> Nuevo
+                    </button>
+                </div>
+            </div>
+
+            {/* Stats */}
+            <div className="grid grid-cols-3 gap-2">
+                <div className="bg-white rounded-xl p-3 text-center shadow-sm border">
+                    <p className="text-2xl font-bold text-slate-800">{sessionItems.length}</p>
+                    <p className="text-[10px] text-slate-400">Total</p>
+                </div>
+                <div className="bg-white rounded-xl p-3 text-center shadow-sm border">
+                    <p className="text-2xl font-bold text-emerald-600">{sessionItems.filter(s => s.recognized).length}</p>
+                    <p className="text-[10px] text-slate-400">Reconocidos</p>
+                </div>
+                <div className="bg-white rounded-xl p-3 text-center shadow-sm border">
+                    <p className="text-2xl font-bold text-amber-500">{streak}</p>
+                    <p className="text-[10px] text-slate-400 flex items-center justify-center gap-0.5"><Zap size={10} />Racha</p>
+                </div>
+            </div>
+
+            {/* Input */}
+            <div className="bg-white rounded-xl p-4 shadow-sm border space-y-3">
+                <div className="flex gap-2">
+                    <input
+                        ref={inputRef}
+                        type="text"
+                        inputMode="numeric"
+                        className="flex-1 border-2 border-sky-300 rounded-xl p-3 text-lg font-mono focus:outline-none focus:border-sky-500"
+                        placeholder="Escanear código..."
+                        value={barcode}
+                        onChange={e => setBarcode(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleScan(barcode); }}
+                        autoFocus
+                    />
+                    <button onClick={() => cameraOn ? stopCamera() : startCamera()} className={`px-4 rounded-xl border-2 ${cameraOn ? 'border-red-300 text-red-500' : 'border-slate-200 text-slate-500'}`}>
+                        {cameraOn ? <CameraOff size={22} /> : <Camera size={22} />}
+                    </button>
+                </div>
+                {cameraOn && <video ref={videoRef} autoPlay playsInline muted className="w-full rounded-xl aspect-video object-cover bg-black" />}
+                <div className="flex gap-2">
+                    <button onClick={() => handleScan(barcode)} className="flex-1 bg-sky-500 hover:bg-sky-600 text-white rounded-xl py-3 font-bold text-lg active:scale-95 transition-transform">
+                        ESCANEAR
+                    </button>
+                    <button onClick={handleUndo} className="px-4 bg-slate-100 text-slate-600 rounded-xl border"><Undo2 size={18} /></button>
+                    <button onClick={() => setSoundOn(s => !s)} className="px-4 bg-slate-100 text-slate-600 rounded-xl border">
+                        {soundOn ? <Volume2 size={18} /> : <VolumeX size={18} />}
+                    </button>
+                </div>
+            </div>
+
+            {/* Last scan */}
+            {lastScan && (
+                <div className={`rounded-xl p-4 border ${lastScan.recognized ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+                    {lastScan.recognized ? (
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center"><Check className="text-white" size={20} /></div>
+                            <div>
+                                <p className="font-bold text-emerald-800">{lastScan.mod}</p>
+                                <p className="text-sm text-emerald-600">{lastScan.color} · Talla {lastScan.talla}</p>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-red-500 flex items-center justify-center"><X className="text-white" size={20} /></div>
+                            <div>
+                                <p className="font-bold text-red-800">No reconocido — guardado</p>
+                                <p className="text-sm text-red-600 font-mono">{lastScan.code}</p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Recent scans list */}
+            {sessionItems.length > 0 && (
+                <div className="space-y-1">
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Últimos escaneos</p>
+                    {sessionItems.slice(0, 15).map(s => (
+                        <div key={s.id} className={`bg-white rounded-xl border px-4 py-2.5 flex justify-between items-center shadow-sm ${!s.recognized ? 'border-red-100 bg-red-50' : ''}`}>
+                            <div>
+                                {s.recognized ? (
+                                    <p className="text-sm font-semibold text-slate-700">{s.mod} · {s.color} · T{s.talla}</p>
+                                ) : (
+                                    <p className="text-sm font-mono text-red-600">{s.code}</p>
+                                )}
+                                <p className="text-xs text-slate-400">{formatDate(s.ts)}</p>
+                            </div>
+                            <div className={`w-2.5 h-2.5 rounded-full ${s.recognized ? 'bg-emerald-400' : 'bg-red-400'}`} />
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ─── SESSIONS ADMIN TAB ───────────────────────────────────────────────────────
+const SessionsAdminTab = ({ addToast }: { addToast: (m: string, t?: ToastType) => void }) => {
+    const [sessions, setSessions] = useState<ScanSession[]>([]);
+    const [expanded, setExpanded] = useState<string | null>(null);
+    const [items, setItems] = useState<{ [id: string]: SessionItem[] }>({});
+    const [loadingItems, setLoadingItems] = useState<string | null>(null);
+
+    useEffect(() => {
+        const unsub = fbSubscribeToAllSessions((s) => setSessions(s as ScanSession[]));
+        return () => unsub();
+    }, []);
+
+    const loadItems = async (sessionId: string) => {
+        if (items[sessionId]) { setExpanded(expanded === sessionId ? null : sessionId); return; }
+        setLoadingItems(sessionId);
+        const data = await fbGetSessionItems(sessionId);
+        setItems(prev => ({ ...prev, [sessionId]: data as SessionItem[] }));
+        setLoadingItems(null);
+        setExpanded(sessionId);
+    };
+
+    const exportSession = async (session: ScanSession) => {
+        let data = items[session.id];
+        if (!data) { data = await fbGetSessionItems(session.id) as SessionItem[]; }
+        const header = 'Código,Modelo,Color,Talla,Reconocido,Fecha\n';
+        const rows = data.map(s =>
+            `${s.code},${s.mod || ''},${s.color || ''},${s.talla || ''},${s.recognized ? 'Sí' : 'No'},${formatDate(s.ts)}`
+        ).join('\n');
+        const blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `sesion-${session.area}-${session.operator}.csv`;
+        a.click();
+        addToast('CSV exportado', 'success');
+    };
+
+    const deleteSession = async (sessionId: string) => {
+        if (!confirm('¿Eliminar esta sesión?')) return;
+        await fbDeleteSession(sessionId);
+        addToast('Sesión eliminada', 'info');
+    };
+
+    return (
+        <div className="space-y-4">
+            <div className="flex items-center gap-2">
+                <Wifi size={16} className="text-emerald-500" />
+                <h2 className="font-bold text-slate-800">Sesiones de Escáner</h2>
+                <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold ml-auto">En tiempo real</span>
+            </div>
+
+            {sessions.length === 0 && (
+                <div className="text-center py-12 text-slate-400">
+                    <Users className="w-12 h-12 mx-auto mb-2 opacity-30" />
+                    <p>Sin sesiones activas</p>
+                    <p className="text-sm">Cuando un scanner inicie un escaneo aparecerá aquí</p>
+                </div>
+            )}
+
+            {sessions.map(session => (
+                <div key={session.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                    <div className="p-4">
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
+                                    <span className="font-bold text-slate-800">{session.area}</span>
+                                </div>
+                                <p className="text-sm text-slate-500 mt-0.5 flex items-center gap-1">
+                                    <Users size={12} /> {session.operator}
+                                </p>
+                                <p className="text-xs text-slate-400">
+                                    {typeof session.createdAt === 'number' ? formatDate(session.createdAt) : 'Activo'}
+                                </p>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-2xl font-bold text-sky-600">{session.count || 0}</p>
+                                <p className="text-xs text-slate-400">escaneos</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="border-t bg-slate-50 px-4 py-2 flex gap-2">
+                        <button onClick={() => loadItems(session.id)} className="flex items-center gap-1 text-xs bg-white border px-3 py-1.5 rounded-lg text-slate-600">
+                            {loadingItems === session.id ? '...' : expanded === session.id ? <><ChevronUp size={12} /> Ocultar</> : <><Eye size={12} /> Ver items</>}
+                        </button>
+                        <button onClick={() => exportSession(session)} className="flex items-center gap-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-lg font-semibold">
+                            <Download size={12} /> CSV
+                        </button>
+                        <button onClick={() => deleteSession(session.id)} className="text-red-400 px-2 py-1.5 ml-auto"><Trash2 size={14} /></button>
+                    </div>
+                    {expanded === session.id && items[session.id] && (
+                        <div className="border-t max-h-60 overflow-y-auto">
+                            {items[session.id].map(item => (
+                                <div key={item.id} className={`px-4 py-2 border-b last:border-0 flex justify-between text-xs ${!item.recognized ? 'bg-red-50' : ''}`}>
+                                    <span className={item.recognized ? 'text-slate-700' : 'text-red-600 font-mono'}>
+                                        {item.recognized ? `${item.mod} · ${item.color} · T${item.talla}` : item.code}
+                                    </span>
+                                    <span className="text-slate-400">{formatDate(item.ts)}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            ))}
+        </div>
+    );
+};
+
 // ─── FOLIO TAB ────────────────────────────────────────────────────────────────
 const FolioTab = ({ onJoin, onCreate, addToast, colors, catalog }: {
     onJoin: (id: string) => void; onCreate: (id: string) => void;
@@ -198,29 +666,30 @@ const FolioTab = ({ onJoin, onCreate, addToast, colors, catalog }: {
     const [notes, setNotes] = useState<{ [id: string]: string }>({});
     const [expandedNote, setExpandedNote] = useState<string | null>(null);
     const [closingFolio, setClosingFolio] = useState<string | null>(null);
-    const [scansForFolio, setScansForFolio] = useState<{ [id: string]: number }>({});
+    const [loading, setLoading] = useState(true);
 
     const load = useCallback(async () => {
-        const all = await database.getAllFolios();
-        setFolios(all.sort((a, b) => b.createdAt - a.createdAt));
+        setLoading(true);
+        const all = await fbGetAllFolios();
+        setFolios((all as Folio[]).sort((a, b) => b.createdAt - a.createdAt));
         const wh = JSON.parse(localStorage.getItem('conteo:warehouses') || '[]');
         setSavedWarehouses(wh);
         const n = JSON.parse(localStorage.getItem('conteo:notes') || '{}');
         setNotes(n);
+        setLoading(false);
     }, []);
 
     useEffect(() => { load(); }, [load]);
 
     const handleCreate = async () => {
-        if (!name.trim()) { addToast('Escribe un nombre para el inventario', 'warning'); return; }
+        if (!name.trim()) { addToast('Escribe un nombre', 'warning'); return; }
         const id = 'F-' + Date.now().toString(36).toUpperCase();
         const f: Folio = {
             id, name: name.trim(), almacen: almacen.trim() || 'Tienda',
             temporada: temporada.trim(), state: 'open',
             theoreticalMap: {}, existenciasMap: {}, areaCounters: {}, createdAt: Date.now()
         };
-        await database.createFolio(f);
-        // Save warehouse
+        await fbCreateFolio(f);
         if (almacen.trim() && !savedWarehouses.includes(almacen.trim())) {
             const updated = [almacen.trim(), ...savedWarehouses].slice(0, 8);
             setSavedWarehouses(updated);
@@ -232,36 +701,30 @@ const FolioTab = ({ onJoin, onCreate, addToast, colors, catalog }: {
         onCreate(id);
     };
 
-    const handleClose = async (f: Folio) => {
-        const scans = await database.getScans(f.id);
-        setScansForFolio(prev => ({ ...prev, [f.id]: scans.length }));
-        setClosingFolio(f.id);
-    };
+    const handleClose = async (fid: string) => { setClosingFolio(fid); };
 
     const confirmClose = async (fid: string) => {
-        const all = await database.getAllFolios();
-        const f = all.find(x => x.id === fid);
+        const all = await fbGetAllFolios();
+        const f = all.find((x: any) => x.id === fid) as Folio;
         if (!f) return;
-        f.state = 'closed';
-        await database.createFolio(f);
+        await fbUpdateFolio({ ...f, state: 'closed' });
         setClosingFolio(null);
         addToast('Inventario cerrado', 'info');
         await load();
     };
 
     const handleReopen = async (fid: string) => {
-        const all = await database.getAllFolios();
-        const f = all.find(x => x.id === fid);
+        const all = await fbGetAllFolios();
+        const f = all.find((x: any) => x.id === fid) as Folio;
         if (!f) return;
-        f.state = 'open';
-        await database.createFolio(f);
+        await fbUpdateFolio({ ...f, state: 'open' });
         addToast('Inventario reabierto', 'success');
         await load();
     };
 
     const handleDelete = async (fid: string) => {
         if (!confirm('¿Eliminar este inventario y todos sus escaneos?')) return;
-        await database.deleteFolioFull(fid);
+        await fbDeleteFolio(fid);
         addToast('Inventario eliminado', 'warning');
         await load();
     };
@@ -272,7 +735,7 @@ const FolioTab = ({ onJoin, onCreate, addToast, colors, catalog }: {
         localStorage.setItem('conteo:notes', JSON.stringify(updated));
     };
 
-    const totalItems = (f: Folio) => Object.values(f.theoreticalMap).reduce((a, b) => a + b, 0);
+    if (loading) return <div className="text-center py-12 text-slate-400"><div className="w-8 h-8 border-2 border-sky-400 border-t-transparent rounded-full animate-spin mx-auto mb-2" /><p>Cargando...</p></div>;
 
     return (
         <div className="space-y-4">
@@ -286,13 +749,13 @@ const FolioTab = ({ onJoin, onCreate, addToast, colors, catalog }: {
             {creating && (
                 <div className="bg-white rounded-xl border border-sky-200 p-4 shadow-sm space-y-3">
                     <p className="font-semibold text-slate-700">Nuevo Inventario</p>
-                    <input className="w-full border rounded-lg p-2 text-sm" placeholder="Nombre del inventario *" value={name} onChange={e => setName(e.target.value)} />
+                    <input className="w-full border rounded-lg p-2 text-sm" placeholder="Nombre *" value={name} onChange={e => setName(e.target.value)} />
                     <div>
                         <input className="w-full border rounded-lg p-2 text-sm" placeholder="Almacén / Tienda" value={almacen} onChange={e => setAlmacen(e.target.value)} />
                         {savedWarehouses.length > 0 && (
                             <div className="flex flex-wrap gap-1 mt-1">
                                 {savedWarehouses.map(w => (
-                                    <button key={w} onClick={() => setAlmacen(w)} className="text-xs bg-slate-100 px-2 py-0.5 rounded-full text-slate-600 hover:bg-sky-100">{w}</button>
+                                    <button key={w} onClick={() => setAlmacen(w)} className="text-xs bg-slate-100 px-2 py-0.5 rounded-full text-slate-600">{w}</button>
                                 ))}
                             </div>
                         )}
@@ -308,15 +771,14 @@ const FolioTab = ({ onJoin, onCreate, addToast, colors, catalog }: {
             {folios.length === 0 && !creating && (
                 <div className="text-center py-12 text-slate-400">
                     <ClipboardList className="w-12 h-12 mx-auto mb-2 opacity-30" />
-                    <p>No hay inventarios</p>
-                    <p className="text-sm">Crea uno para comenzar</p>
+                    <p>No hay inventarios. Crea uno para comenzar.</p>
                 </div>
             )}
 
             {folios.map(f => (
-                <div key={f.id} className={`bg-white rounded-xl border shadow-sm overflow-hidden ${f.state === 'open' ? 'border-emerald-200' : 'border-slate-200 opacity-70'}`}>
+                <div key={f.id} className={`bg-white rounded-xl border shadow-sm overflow-hidden ${f.state === 'open' ? 'border-emerald-200' : 'border-slate-200 opacity-75'}`}>
                     <div className="p-4">
-                        <div className="flex justify-between items-start">
+                        <div className="flex items-start justify-between">
                             <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2">
                                     <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${f.state === 'open' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
@@ -325,61 +787,35 @@ const FolioTab = ({ onJoin, onCreate, addToast, colors, catalog }: {
                                     <span className="font-bold text-slate-800 text-sm truncate">{f.name}</span>
                                 </div>
                                 <p className="text-xs text-slate-500 mt-0.5">{f.almacen} {f.temporada && `· ${f.temporada}`}</p>
-                                <p className="text-xs text-slate-400">{formatDate(f.createdAt)} · {totalItems(f)} pzas teóricas</p>
+                                <p className="text-xs text-slate-400">{formatDate(f.createdAt)}</p>
                             </div>
                         </div>
-
-                        {/* Note */}
                         {expandedNote === f.id ? (
                             <div className="mt-3">
-                                <textarea
-                                    className="w-full border rounded-lg p-2 text-xs resize-none"
-                                    rows={3} placeholder="Observaciones del inventario..."
-                                    value={notes[f.id] || ''}
-                                    onChange={e => saveNote(f.id, e.target.value)}
-                                />
-                                <button onClick={() => setExpandedNote(null)} className="text-xs text-sky-500 mt-1">Guardar nota</button>
+                                <textarea className="w-full border rounded-lg p-2 text-xs resize-none" rows={3} placeholder="Observaciones..." value={notes[f.id] || ''} onChange={e => saveNote(f.id, e.target.value)} />
+                                <button onClick={() => setExpandedNote(null)} className="text-xs text-sky-500 mt-1">Guardar</button>
                             </div>
-                        ) : (
-                            notes[f.id] && <p className="text-xs text-slate-500 italic mt-2 bg-amber-50 p-2 rounded-lg">{notes[f.id]}</p>
-                        )}
+                        ) : notes[f.id] && <p className="text-xs text-slate-500 italic mt-2 bg-amber-50 p-2 rounded-lg">{notes[f.id]}</p>}
                     </div>
-
-                    {/* Actions */}
                     <div className="border-t bg-slate-50 px-4 py-2 flex gap-2 flex-wrap">
                         {f.state === 'open' && (
                             <>
-                                <button onClick={() => onJoin(f.id)} className="flex items-center gap-1 text-xs bg-sky-500 text-white px-3 py-1.5 rounded-lg font-semibold">
-                                    <ArrowRight size={12} /> Abrir
-                                </button>
-                                <button onClick={() => handleClose(f)} className="flex items-center gap-1 text-xs bg-amber-100 text-amber-700 px-3 py-1.5 rounded-lg">
-                                    <Lock size={12} /> Cerrar
-                                </button>
+                                <button onClick={() => onJoin(f.id)} className="flex items-center gap-1 text-xs bg-sky-500 text-white px-3 py-1.5 rounded-lg font-semibold"><ArrowRight size={12} /> Abrir</button>
+                                <button onClick={() => handleClose(f.id)} className="flex items-center gap-1 text-xs bg-amber-100 text-amber-700 px-3 py-1.5 rounded-lg"><Lock size={12} /> Cerrar</button>
                             </>
                         )}
                         {f.state === 'closed' && (
-                            <button onClick={() => handleReopen(f.id)} className="flex items-center gap-1 text-xs bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-lg">
-                                <Unlock size={12} /> Reabrir
-                            </button>
+                            <button onClick={() => handleReopen(f.id)} className="flex items-center gap-1 text-xs bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-lg"><Unlock size={12} /> Reabrir</button>
                         )}
-                        <button onClick={() => setExpandedNote(expandedNote === f.id ? null : f.id)} className="flex items-center gap-1 text-xs bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg">
-                            <MessageSquare size={12} /> Nota
-                        </button>
-                        <button onClick={() => handleDelete(f.id)} className="flex items-center gap-1 text-xs text-red-400 px-2 py-1.5 rounded-lg ml-auto">
-                            <Trash2 size={12} />
-                        </button>
+                        <button onClick={() => setExpandedNote(expandedNote === f.id ? null : f.id)} className="flex items-center gap-1 text-xs bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg"><MessageSquare size={12} /> Nota</button>
+                        <button onClick={() => handleDelete(f.id)} className="text-red-400 px-2 py-1.5 ml-auto"><Trash2 size={12} /></button>
                     </div>
-
-                    {/* Close confirm */}
                     {closingFolio === f.id && (
                         <div className="border-t bg-amber-50 p-4 text-sm">
                             <p className="font-semibold text-amber-800 mb-1">¿Cerrar inventario?</p>
-                            <p className="text-amber-600 text-xs mb-3">
-                                Total escaneado: <strong>{scansForFolio[f.id] ?? '...'}</strong> items.
-                                Los datos se conservan pero el folio no aceptará más escaneos.
-                            </p>
+                            <p className="text-amber-600 text-xs mb-3">Los datos se conservan pero no aceptará más escaneos.</p>
                             <div className="flex gap-2">
-                                <button onClick={() => confirmClose(f.id)} className="flex-1 bg-amber-500 text-white rounded-lg py-1.5 text-sm font-semibold">Confirmar Cierre</button>
+                                <button onClick={() => confirmClose(f.id)} className="flex-1 bg-amber-500 text-white rounded-lg py-1.5 text-sm font-semibold">Confirmar</button>
                                 <button onClick={() => setClosingFolio(null)} className="flex-1 bg-white border rounded-lg py-1.5 text-sm">Cancelar</button>
                             </div>
                         </div>
@@ -399,8 +835,9 @@ const StockTab = ({ folioId, catalog, colors, onUpdate, addToast }: {
     const [preview, setPreview] = useState<any[]>([]);
     const [mode, setMode] = useState<'replace' | 'add'>('add');
     const [step, setStep] = useState(0);
+    const [loading, setLoading] = useState(false);
 
-    const parseRaw = useCallback(() => {
+    const parseRaw = () => {
         const lines = rawText.trim().split('\n').filter(l => l.trim());
         const parsed: any[] = [];
         for (const line of lines) {
@@ -415,72 +852,57 @@ const StockTab = ({ folioId, catalog, colors, onUpdate, addToast }: {
             const vkey = keyOf(modRaw, colorRaw, tallaRaw, cat);
             parsed.push({ mod: cleanModel(modRaw), color: canonical(colorRaw), talla: tallaRaw, qty, vkey, cat });
         }
-        setPreview(parsed);
-        setStep(1);
-    }, [rawText]);
+        setPreview(parsed); setStep(1);
+    };
 
     const handleConfirm = async () => {
         if (!folioId) { addToast('Selecciona un inventario primero', 'warning'); return; }
+        setLoading(true);
         const theoretical: StockMap = {};
         const newCatalog = { byBarcode: { ...catalog.byBarcode }, byVariant: { ...catalog.byVariant } };
         for (const item of preview) {
             if (mode === 'replace') theoretical[item.vkey] = item.qty;
             else theoretical[item.vkey] = (theoretical[item.vkey] || 0) + item.qty;
             newCatalog.byVariant[item.vkey] = { mod: item.mod, color: item.color, talla: item.talla, vkey: item.vkey, category: item.cat };
-            // generate barcode
             const bc = generateBarcode(item.mod, item.color, item.talla, colors);
             newCatalog.byBarcode[bc] = newCatalog.byVariant[item.vkey];
         }
-        await database.updateFolioStock(folioId, theoretical, newCatalog);
+        // Get folio from Firebase and update
+        const all = await fbGetAllFolios();
+        const folio = all.find((f: any) => f.id === folioId) as Folio;
+        if (folio) {
+            const mergedMap = mode === 'replace' ? theoretical : { ...(folio.theoreticalMap || {}), ...theoretical };
+            await fbUpdateFolio({ ...folio, theoreticalMap: mergedMap });
+        }
+        await fbSaveSettings('catalog', newCatalog);
         onUpdate(newCatalog);
-        addToast(`${preview.length} variantes ${mode === 'replace' ? 'reemplazadas' : 'agregadas'}`, 'success');
+        setLoading(false);
+        addToast(`${preview.length} variantes cargadas`, 'success');
         setRawText(''); setPreview([]); setStep(0);
     };
 
-    if (!folioId) return (
-        <div className="text-center py-12 text-slate-400">
-            <Boxes className="w-12 h-12 mx-auto mb-2 opacity-30" />
-            <p>Abre un inventario primero</p>
-        </div>
-    );
+    if (!folioId) return <div className="text-center py-12 text-slate-400"><Boxes className="w-12 h-12 mx-auto mb-2 opacity-30" /><p>Abre un inventario primero</p></div>;
 
     return (
         <div className="space-y-4">
             <Stepper steps={['Pegar Datos', 'Validar', 'Confirmar']} current={step} />
-
             {step === 0 && (
                 <>
                     <div className="bg-sky-50 rounded-xl p-3 text-xs text-sky-700 border border-sky-100">
-                        <p className="font-semibold mb-1">Formato esperado:</p>
-                        <pre className="text-sky-600">MODELO COLOR TALLA CANTIDAD</pre>
-                        <pre className="text-sky-600">NIKEAIR NEGRO 27 10</pre>
+                        <p className="font-semibold mb-1">Formato:</p>
+                        <pre className="text-sky-600">MODELO COLOR TALLA CANTIDAD{'\n'}NIKEAIR NEGRO 27 10</pre>
                     </div>
-                    <textarea
-                        className="w-full border rounded-xl p-3 text-sm font-mono resize-none"
-                        rows={10}
-                        placeholder="Pega aquí el inventario teórico..."
-                        value={rawText}
-                        onChange={e => setRawText(e.target.value)}
-                    />
-                    <div className="flex gap-2">
-                        <label className="flex items-center gap-2 text-sm">
-                            <input type="radio" checked={mode === 'add'} onChange={() => setMode('add')} /> Agregar al teórico
-                        </label>
-                        <label className="flex items-center gap-2 text-sm">
-                            <input type="radio" checked={mode === 'replace'} onChange={() => setMode('replace')} /> Reemplazar
-                        </label>
+                    <textarea className="w-full border rounded-xl p-3 text-sm font-mono resize-none" rows={10} placeholder="Pega el inventario teórico aquí..." value={rawText} onChange={e => setRawText(e.target.value)} />
+                    <div className="flex gap-4">
+                        <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="radio" checked={mode === 'add'} onChange={() => setMode('add')} /> Agregar</label>
+                        <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="radio" checked={mode === 'replace'} onChange={() => setMode('replace')} /> Reemplazar</label>
                     </div>
-                    <button onClick={parseRaw} disabled={!rawText.trim()} className="w-full bg-sky-500 text-white rounded-xl py-3 font-semibold disabled:opacity-40">
-                        Validar →
-                    </button>
+                    <button onClick={parseRaw} disabled={!rawText.trim()} className="w-full bg-sky-500 text-white rounded-xl py-3 font-semibold disabled:opacity-40">Validar →</button>
                 </>
             )}
-
             {step === 1 && (
                 <>
-                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-sm text-emerald-700">
-                        ✓ {preview.length} variantes identificadas
-                    </div>
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-sm text-emerald-700">✓ {preview.length} variantes identificadas</div>
                     <div className="space-y-1 max-h-60 overflow-y-auto">
                         {preview.map((p, i) => (
                             <div key={i} className="flex justify-between text-xs bg-white border rounded-lg px-3 py-2">
@@ -490,12 +912,8 @@ const StockTab = ({ folioId, catalog, colors, onUpdate, addToast }: {
                         ))}
                     </div>
                     <div className="flex gap-2">
-                        <button onClick={handleConfirm} className="flex-1 bg-emerald-500 text-white rounded-xl py-3 font-semibold">
-                            Cargar Teórico
-                        </button>
-                        <button onClick={() => { setStep(0); setPreview([]); }} className="flex-1 bg-slate-100 text-slate-700 rounded-xl py-3">
-                            Volver
-                        </button>
+                        <button onClick={handleConfirm} disabled={loading} className="flex-1 bg-emerald-500 text-white rounded-xl py-3 font-semibold disabled:opacity-50">{loading ? 'Cargando...' : 'Cargar Teórico'}</button>
+                        <button onClick={() => { setStep(0); setPreview([]); }} className="flex-1 bg-slate-100 text-slate-700 rounded-xl py-3">Volver</button>
                     </div>
                 </>
             )}
@@ -503,11 +921,10 @@ const StockTab = ({ folioId, catalog, colors, onUpdate, addToast }: {
     );
 };
 
-// ─── SCAN TAB ─────────────────────────────────────────────────────────────────
-const ScanTab = ({ folio, catalog, colors, onScan, scans, role, addToast }: {
+// ─── SCAN TAB (Inventario Cíclico) ────────────────────────────────────────────
+const ScanTab = ({ folio, catalog, colors, scans, role, addToast }: {
     folio: Folio | null; catalog: Catalog; colors: ColorMap;
-    onScan: () => void; scans: Scan[]; role: Role;
-    addToast: (m: string, t?: ToastType) => void;
+    scans: Scan[]; role: Role; addToast: (m: string, t?: ToastType) => void;
 }) => {
     const [barcode, setBarcode] = useState('');
     const [area, setArea] = useState('ÁREA-A');
@@ -524,7 +941,6 @@ const ScanTab = ({ folio, catalog, colors, onScan, scans, role, addToast }: {
     const inputRef = useRef<HTMLInputElement>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
-    const detectorRef = useRef<any>(null);
     const scanLoopRef = useRef<number | null>(null);
 
     useEffect(() => {
@@ -533,15 +949,12 @@ const ScanTab = ({ folio, catalog, colors, onScan, scans, role, addToast }: {
     }, []);
 
     useEffect(() => {
-        if (inputRef.current) inputRef.current.focus();
-    }, [area, folio]);
-
-    // Velocity calculation
-    useEffect(() => {
         const now = Date.now();
         const recent = scanTimes.filter(t => now - t < 60000);
         setVelocity(recent.length);
     }, [scanTimes]);
+
+    useEffect(() => { inputRef.current?.focus(); }, [area, folio]);
 
     const playBeep = useCallback((ok: boolean) => {
         if (!soundOn) return;
@@ -551,7 +964,6 @@ const ScanTab = ({ folio, catalog, colors, onScan, scans, role, addToast }: {
             const gain = ctx.createGain();
             osc.connect(gain); gain.connect(ctx.destination);
             osc.frequency.value = ok ? 880 : 330;
-            osc.type = ok ? 'sine' : 'square';
             gain.gain.setValueAtTime(0.3, ctx.currentTime);
             gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
             osc.start(); osc.stop(ctx.currentTime + 0.2);
@@ -567,15 +979,11 @@ const ScanTab = ({ folio, catalog, colors, onScan, scans, role, addToast }: {
         let item = catalog.byBarcode[clean];
         if (!item) {
             const decoded = tryDecodeStructuredBarcode(clean, colors);
-            if (decoded) {
-                item = { mod: decoded.mod, color: decoded.color, talla: decoded.talla, vkey: decoded.vkey, category: decoded.category };
-            }
+            if (decoded) item = { mod: decoded.mod, color: decoded.color, talla: decoded.talla, vkey: decoded.vkey, category: decoded.category };
         }
 
         if (!item) {
-            setFlash('err');
-            setStreak(0);
-            playBeep(false);
+            setFlash('err'); setStreak(0); playBeep(false);
             if (navigator.vibrate) navigator.vibrate([50, 30, 50]);
             addToast(`Código no reconocido: ${clean}`, 'error');
             setLastScan({ code: clean, ok: false });
@@ -584,35 +992,25 @@ const ScanTab = ({ folio, catalog, colors, onScan, scans, role, addToast }: {
         }
 
         const scan: Scan = {
-            id: crypto.randomUUID(),
-            folioId: folio.id,
-            code: clean,
-            vkey: item.vkey,
-            mod: item.mod,
-            color: item.color,
-            talla: item.talla,
-            area,
-            pos: '0',
-            user,
-            ts: Date.now(),
-            category: item.category
+            id: crypto.randomUUID(), folioId: folio.id, code: clean,
+            vkey: item.vkey, mod: item.mod, color: item.color, talla: item.talla,
+            area, pos: '0', user, ts: Date.now(), category: item.category
         };
 
-        await database.addScan(scan);
-        setFlash('ok');
-        setStreak(s => s + 1);
+        await fbAddScan(scan);
+        setFlash('ok'); setStreak(s => s + 1);
         setScanTimes(prev => [...prev.filter(t => Date.now() - t < 60000), Date.now()]);
         playBeep(true);
         if (navigator.vibrate) navigator.vibrate(30);
         setLastScan({ ...item, ok: true });
-        onScan();
         setTimeout(() => { setFlash(null); inputRef.current?.focus(); }, 600);
-    }, [folio, catalog, colors, area, user, addToast, onScan, playBeep]);
+    }, [folio, catalog, colors, area, user, addToast, playBeep]);
 
     const handleUndo = async () => {
         const myScans = scans.filter(s => s.area === area).sort((a, b) => b.ts - a.ts);
         if (!myScans[0] || !folio) { addToast('Nada que deshacer', 'info'); return; }
-        await database.deleteScan(myScans[0].id, folio.id, myScans[0].vkey);
+        const s = myScans[0];
+        await fbDeleteScan(s.id, folio.id, s.vkey, s.area, s.pos);
         setStreak(s => Math.max(0, s - 1));
         addToast('Último escaneo deshecho', 'info');
     };
@@ -623,10 +1021,10 @@ const ScanTab = ({ folio, catalog, colors, onScan, scans, role, addToast }: {
             streamRef.current = stream;
             if (videoRef.current) videoRef.current.srcObject = stream;
             if ('BarcodeDetector' in window) {
-                detectorRef.current = new (window as any).BarcodeDetector({ formats: ['ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a'] });
+                const detector = new (window as any).BarcodeDetector({ formats: ['ean_13', 'ean_8', 'code_128'] });
                 const loop = async () => {
-                    if (videoRef.current && detectorRef.current) {
-                        const codes = await detectorRef.current.detect(videoRef.current).catch(() => []);
+                    if (videoRef.current) {
+                        const codes = await detector.detect(videoRef.current).catch(() => []);
                         if (codes.length > 0) await handleScan(codes[0].rawValue);
                     }
                     scanLoopRef.current = requestAnimationFrame(loop);
@@ -634,18 +1032,13 @@ const ScanTab = ({ folio, catalog, colors, onScan, scans, role, addToast }: {
                 loop();
             }
             setCameraOn(true);
-        } catch (e) { addToast('No se pudo acceder a la cámara', 'error'); }
+        } catch { addToast('No se pudo acceder a la cámara', 'error'); }
     };
 
     const stopCamera = () => {
-        if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
-        if (scanLoopRef.current) { cancelAnimationFrame(scanLoopRef.current); }
+        if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); }
+        if (scanLoopRef.current) cancelAnimationFrame(scanLoopRef.current);
         setCameraOn(false);
-    };
-
-    const saveUser = (u: string) => {
-        setUser(u);
-        localStorage.setItem('conteo:user', u);
     };
 
     const addCustomArea = () => {
@@ -654,189 +1047,119 @@ const ScanTab = ({ folio, catalog, colors, onScan, scans, role, addToast }: {
         const updated = [...customAreas, a];
         setCustomAreas(updated);
         localStorage.setItem('conteo:customAreas', JSON.stringify(updated));
-        setArea(a);
-        setNewArea('');
+        setArea(a); setNewArea('');
     };
 
-    const areaCount = scans.filter(s => s.area === area).length;
-    const totalScans = scans.length;
     const coveragePct = folio ? (() => {
-        const total = Object.values(folio.theoreticalMap).reduce((a, b) => a + b, 0);
-        const scanned = Object.values(folio.existenciasMap).reduce((a, b) => a + b, 0);
+        const total = Object.values(folio.theoreticalMap || {}).reduce((a, b) => a + b, 0);
+        const scanned = Object.values(folio.existenciasMap || {}).reduce((a, b) => a + b, 0);
         return total > 0 ? (scanned / total) * 100 : 0;
     })() : 0;
 
-    const allAreas = ['ÁREA-A', 'ÁREA-B', 'ÁREA-C', 'ÁREA-D', 'BODEGA', ...customAreas];
+    if (!folio) return <div className="text-center py-12 text-slate-400"><QrCode className="w-12 h-12 mx-auto mb-2 opacity-30" /><p>No hay inventario activo</p></div>;
 
-    if (!folio) return (
-        <div className="text-center py-12 text-slate-400">
-            <QrCode className="w-12 h-12 mx-auto mb-2 opacity-30" />
-            <p>No hay inventario activo</p>
-            {role === 'scanner' && <p className="text-sm">Pide al admin que cree uno</p>}
-        </div>
-    );
+    const allAreas = ['ÁREA-A', 'ÁREA-B', 'ÁREA-C', 'ÁREA-D', 'BODEGA', ...customAreas];
 
     return (
         <div className={`space-y-4 transition-colors duration-300 ${flash === 'ok' ? 'bg-emerald-50' : flash === 'err' ? 'bg-red-50' : ''} rounded-xl`}>
-            {/* Stats bar */}
             <div className="grid grid-cols-4 gap-2">
-                <div className="bg-white rounded-xl p-3 text-center shadow-sm border">
-                    <p className="text-xl font-bold text-slate-800">{totalScans}</p>
-                    <p className="text-[10px] text-slate-400">Total</p>
-                </div>
-                <div className="bg-white rounded-xl p-3 text-center shadow-sm border">
-                    <p className="text-xl font-bold text-sky-600">{areaCount}</p>
-                    <p className="text-[10px] text-slate-400">En área</p>
-                </div>
-                <div className="bg-white rounded-xl p-3 text-center shadow-sm border">
-                    <p className="text-xl font-bold text-amber-500">{streak}</p>
-                    <p className="text-[10px] text-slate-400 flex items-center justify-center gap-0.5"><Zap size={10} />Racha</p>
-                </div>
-                <div className="bg-white rounded-xl p-3 text-center shadow-sm border">
-                    <p className="text-xl font-bold text-purple-600">{velocity}</p>
-                    <p className="text-[10px] text-slate-400">/min</p>
-                </div>
+                <div className="bg-white rounded-xl p-3 text-center shadow-sm border"><p className="text-xl font-bold text-slate-800">{scans.length}</p><p className="text-[10px] text-slate-400">Total</p></div>
+                <div className="bg-white rounded-xl p-3 text-center shadow-sm border"><p className="text-xl font-bold text-sky-600">{scans.filter(s => s.area === area).length}</p><p className="text-[10px] text-slate-400">En área</p></div>
+                <div className="bg-white rounded-xl p-3 text-center shadow-sm border"><p className="text-xl font-bold text-amber-500">{streak}</p><p className="text-[10px] text-slate-400 flex items-center justify-center gap-0.5"><Zap size={10} />Racha</p></div>
+                <div className="bg-white rounded-xl p-3 text-center shadow-sm border"><p className="text-xl font-bold text-purple-600">{velocity}</p><p className="text-[10px] text-slate-400">/min</p></div>
             </div>
 
-            {/* Coverage */}
             <div className="bg-white rounded-xl p-4 shadow-sm border flex items-center gap-4">
                 <CoverageRing pct={coveragePct} />
-                <div>
-                    <p className="font-semibold text-slate-700 text-sm">Cobertura del inventario</p>
-                    <p className="text-xs text-slate-500">{folio.name}</p>
-                    <p className="text-xs text-slate-400">{folio.almacen}</p>
-                </div>
+                <div><p className="font-semibold text-slate-700 text-sm">Cobertura</p><p className="text-xs text-slate-500">{folio.name}</p></div>
             </div>
 
-            {/* Area selector */}
             <div>
-                <p className="text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide flex items-center gap-1"><MapPin size={12} /> Área actual</p>
+                <p className="text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide">Área actual</p>
                 <div className="flex flex-wrap gap-2">
                     {allAreas.map(a => (
-                        <button key={a} onClick={() => setArea(a)}
-                            className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${area === a ? 'bg-sky-500 text-white border-sky-500' : 'bg-white text-slate-600 border-slate-200'}`}>
-                            {a}
-                        </button>
+                        <button key={a} onClick={() => setArea(a)} className={`px-3 py-1.5 rounded-full text-sm font-medium border ${area === a ? 'bg-sky-500 text-white border-sky-500' : 'bg-white text-slate-600 border-slate-200'}`}>{a}</button>
                     ))}
                     <div className="flex gap-1">
                         <input className="border rounded-full px-3 py-1.5 text-sm w-28" placeholder="Nueva área" value={newArea} onChange={e => setNewArea(e.target.value.toUpperCase())} onKeyDown={e => e.key === 'Enter' && addCustomArea()} />
-                        <button onClick={addCustomArea} className="bg-slate-100 rounded-full px-2 text-slate-600 border"><Plus size={14} /></button>
+                        <button onClick={addCustomArea} className="bg-slate-100 rounded-full px-2 border"><Plus size={14} /></button>
                     </div>
                 </div>
             </div>
 
-            {/* Input */}
             <div className="bg-white rounded-xl p-4 shadow-sm border space-y-3">
                 <div className="flex gap-2">
-                    <input
-                        ref={inputRef}
-                        type="text"
-                        inputMode="numeric"
-                        className="flex-1 border-2 border-sky-300 rounded-xl p-3 text-lg font-mono focus:outline-none focus:border-sky-500"
-                        placeholder="Escanear código..."
-                        value={barcode}
-                        onChange={e => setBarcode(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') handleScan(barcode); }}
-                    />
+                    <input ref={inputRef} type="text" inputMode="numeric" className="flex-1 border-2 border-sky-300 rounded-xl p-3 text-lg font-mono focus:outline-none focus:border-sky-500" placeholder="Escanear código..." value={barcode} onChange={e => setBarcode(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleScan(barcode); }} />
                     <button onClick={() => cameraOn ? stopCamera() : startCamera()} className={`px-4 rounded-xl border-2 ${cameraOn ? 'border-red-300 text-red-500' : 'border-slate-200 text-slate-500'}`}>
                         {cameraOn ? <CameraOff size={22} /> : <Camera size={22} />}
                     </button>
                 </div>
-
-                {cameraOn && (
-                    <video ref={videoRef} autoPlay playsInline muted className="w-full rounded-xl aspect-video object-cover bg-black" />
-                )}
-
+                {cameraOn && <video ref={videoRef} autoPlay playsInline muted className="w-full rounded-xl aspect-video object-cover bg-black" />}
                 <div className="flex gap-2">
-                    <button onClick={() => handleScan(barcode)} className="flex-1 bg-sky-500 hover:bg-sky-600 text-white rounded-xl py-3 font-bold text-lg active:scale-95 transition-transform">
-                        ESCANEAR
-                    </button>
+                    <button onClick={() => handleScan(barcode)} className="flex-1 bg-sky-500 text-white rounded-xl py-3 font-bold text-lg active:scale-95 transition-transform">ESCANEAR</button>
                     <button onClick={handleUndo} className="px-4 bg-slate-100 text-slate-600 rounded-xl border"><Undo2 size={18} /></button>
-                    <button onClick={() => setSoundOn(s => !s)} className="px-4 bg-slate-100 text-slate-600 rounded-xl border">
-                        {soundOn ? <Volume2 size={18} /> : <VolumeX size={18} />}
-                    </button>
+                    <button onClick={() => setSoundOn(s => !s)} className="px-4 bg-slate-100 text-slate-600 rounded-xl border">{soundOn ? <Volume2 size={18} /> : <VolumeX size={18} />}</button>
                 </div>
             </div>
 
-            {/* Last scan result */}
             {lastScan && (
                 <div className={`rounded-xl p-4 border ${lastScan.ok ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
-                    {lastScan.ok ? (
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center"><Check className="text-white" size={20} /></div>
-                            <div>
-                                <p className="font-bold text-emerald-800">{lastScan.mod}</p>
-                                <p className="text-sm text-emerald-600">{lastScan.color} · Talla {lastScan.talla}</p>
-                            </div>
+                    <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${lastScan.ok ? 'bg-emerald-500' : 'bg-red-500'}`}>
+                            {lastScan.ok ? <Check className="text-white" size={20} /> : <X className="text-white" size={20} />}
                         </div>
-                    ) : (
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-red-500 flex items-center justify-center"><X className="text-white" size={20} /></div>
-                            <div>
-                                <p className="font-bold text-red-800">No reconocido</p>
-                                <p className="text-sm text-red-600 font-mono">{lastScan.code}</p>
-                            </div>
+                        <div>
+                            <p className={`font-bold ${lastScan.ok ? 'text-emerald-800' : 'text-red-800'}`}>{lastScan.ok ? `${lastScan.mod} · ${lastScan.color}` : 'No reconocido'}</p>
+                            <p className={`text-sm ${lastScan.ok ? 'text-emerald-600' : 'text-red-600 font-mono'}`}>{lastScan.ok ? `Talla ${lastScan.talla}` : lastScan.code}</p>
                         </div>
-                    )}
+                    </div>
                 </div>
             )}
 
-            {/* User name */}
             <div>
                 <label className="text-xs text-slate-500 font-semibold uppercase">Operador</label>
-                <input className="w-full border rounded-lg p-2 text-sm mt-1" value={user} onChange={e => saveUser(e.target.value)} />
+                <input className="w-full border rounded-lg p-2 text-sm mt-1" value={user} onChange={e => { setUser(e.target.value); localStorage.setItem('conteo:user', e.target.value); }} />
             </div>
         </div>
     );
 };
 
-// ─── REPORT TAB ────────────────────────────────────────────────────────────────
+// ─── REPORT TAB ───────────────────────────────────────────────────────────────
 const ReportTab = ({ folio, scans, onTabChange, addToast }: {
     folio: Folio | null; scans: Scan[];
-    onTabChange: (t: Tab) => void;
-    addToast: (m: string, t?: ToastType) => void;
+    onTabChange: (t: Tab) => void; addToast: (m: string, t?: ToastType) => void;
 }) => {
-    const [groupBy, setGroupBy] = useState<'none' | 'mod' | 'color'>('none');
-    const [expandedKey, setExpandedKey] = useState<string | null>(null);
     const [filter, setFilter] = useState<'all' | 'faltante' | 'sobrante' | 'ok'>('all');
+    const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
     const report = useMemo(() => {
         if (!folio) return { rows: [], totalItems: 0, scannedItems: 0, missingItems: 0 };
-        const allKeys = new Set([
-            ...Object.keys(folio.theoreticalMap || {}),
-            ...Object.keys(folio.existenciasMap || {})
-        ]);
+        const allKeys = new Set([...Object.keys(folio.theoreticalMap || {}), ...Object.keys(folio.existenciasMap || {})]);
         const rows = Array.from(allKeys).map(vkey => {
             const teo = folio.theoreticalMap[vkey] || 0;
             const fis = folio.existenciasMap[vkey] || 0;
             const diff = fis - teo;
             const parts = splitKey(vkey);
-            const areaMap: { [area: string]: number } = {};
+            const areaMap: { [a: string]: number } = {};
             scans.filter(s => s.vkey === vkey).forEach(s => { areaMap[s.area] = (areaMap[s.area] || 0) + 1; });
-            let status: 'ok' | 'faltante' | 'sobrante' = 'ok';
-            if (diff < 0) status = 'faltante';
-            else if (diff > 0) status = 'sobrante';
+            const status: 'ok' | 'faltante' | 'sobrante' = diff < 0 ? 'faltante' : diff > 0 ? 'sobrante' : 'ok';
             return { vkey, teo, fis, diff, status, areaMap, ...parts };
         });
-        const totalItems = rows.reduce((a, r) => a + r.teo, 0);
-        const scannedItems = rows.reduce((a, r) => a + r.fis, 0);
-        const missingItems = rows.filter(r => r.status === 'faltante').reduce((a, r) => a + Math.abs(r.diff), 0);
-        return { rows, totalItems, scannedItems, missingItems };
+        return {
+            rows,
+            totalItems: rows.reduce((a, r) => a + r.teo, 0),
+            scannedItems: rows.reduce((a, r) => a + r.fis, 0),
+            missingItems: rows.filter(r => r.status === 'faltante').reduce((a, r) => a + Math.abs(r.diff), 0)
+        };
     }, [folio, scans]);
 
-    const top5Missing = useMemo(() =>
-        report.rows.filter(r => r.status === 'faltante').sort((a, b) => a.diff - b.diff).slice(0, 5),
-        [report.rows]
-    );
-
+    const top5 = useMemo(() => report.rows.filter(r => r.status === 'faltante').sort((a, b) => a.diff - b.diff).slice(0, 5), [report.rows]);
     const areaChart = useMemo(() => {
-        const map: { [area: string]: number } = {};
+        const map: { [a: string]: number } = {};
         scans.forEach(s => { map[s.area] = (map[s.area] || 0) + 1; });
         return Object.entries(map).map(([area, count]) => ({ area, count })).sort((a, b) => b.count - a.count);
     }, [scans]);
-
     const filtered = useMemo(() => report.rows.filter(r => filter === 'all' || r.status === filter), [report.rows, filter]);
-
     const coveragePct = report.totalItems > 0 ? (report.scannedItems / report.totalItems) * 100 : 0;
 
     const exportCSV = () => {
@@ -844,125 +1167,68 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
         const rows = report.rows.map(r => `${r.mod},${r.color},${r.talla},${r.teo},${r.fis},${r.diff},${r.status}`).join('\n');
         const blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = `reporte-${folio?.name || 'inventario'}.csv`; a.click();
-        addToast('Reporte exportado', 'success');
+        const a = document.createElement('a'); a.href = url; a.download = `reporte-${folio?.name}.csv`; a.click();
+        addToast('CSV exportado', 'success');
     };
 
-    if (!folio) return (
-        <div className="text-center py-12 text-slate-400">
-            <BarChart3 className="w-12 h-12 mx-auto mb-2 opacity-30" />
-            <p>Abre un inventario para ver el reporte</p>
-            <button onClick={() => onTabChange('folio')} className="mt-3 text-sm text-sky-500 underline">Ir a Inventarios →</button>
-        </div>
-    );
+    if (!folio) return <div className="text-center py-12 text-slate-400"><BarChart3 className="w-12 h-12 mx-auto mb-2 opacity-30" /><p>Abre un inventario para ver el reporte</p><button onClick={() => onTabChange('folio')} className="mt-3 text-sm text-sky-500 underline">Ir a Inventarios →</button></div>;
 
     return (
         <div className="space-y-4">
-            {/* Summary cards */}
             <div className="grid grid-cols-2 gap-3">
-                <div className="bg-white rounded-xl p-4 shadow-sm border text-center">
-                    <CoverageRing pct={coveragePct} size={70} />
-                    <p className="text-xs text-slate-500 mt-1">Cobertura</p>
-                </div>
+                <div className="bg-white rounded-xl p-4 shadow-sm border text-center"><CoverageRing pct={coveragePct} size={70} /><p className="text-xs text-slate-500 mt-1">Cobertura</p></div>
                 <div className="space-y-2">
-                    <div className="bg-white rounded-xl p-3 shadow-sm border flex justify-between items-center">
-                        <div><p className="text-xs text-slate-400">Teórico</p><p className="font-bold text-slate-700">{report.totalItems}</p></div>
-                        <Package size={18} className="text-slate-300" />
-                    </div>
-                    <div className="bg-white rounded-xl p-3 shadow-sm border flex justify-between items-center">
-                        <div><p className="text-xs text-slate-400">Físico</p><p className="font-bold text-sky-600">{report.scannedItems}</p></div>
-                        <Check size={18} className="text-emerald-300" />
-                    </div>
-                    <div className="bg-red-50 rounded-xl p-3 shadow-sm border border-red-100 flex justify-between items-center">
-                        <div><p className="text-xs text-red-400">Faltantes</p><p className="font-bold text-red-600">{report.missingItems}</p></div>
-                        <AlertTriangle size={18} className="text-red-300" />
-                    </div>
+                    <div className="bg-white rounded-xl p-3 shadow-sm border flex justify-between items-center"><div><p className="text-xs text-slate-400">Teórico</p><p className="font-bold text-slate-700">{report.totalItems}</p></div><Package size={18} className="text-slate-300" /></div>
+                    <div className="bg-white rounded-xl p-3 shadow-sm border flex justify-between items-center"><div><p className="text-xs text-slate-400">Físico</p><p className="font-bold text-sky-600">{report.scannedItems}</p></div><Check size={18} className="text-emerald-300" /></div>
+                    <div className="bg-red-50 rounded-xl p-3 border border-red-100 flex justify-between items-center"><div><p className="text-xs text-red-400">Faltantes</p><p className="font-bold text-red-600">{report.missingItems}</p></div><AlertTriangle size={18} className="text-red-300" /></div>
                 </div>
             </div>
 
-            {/* Top 5 missing */}
-            {top5Missing.length > 0 && (
+            {top5.length > 0 && (
                 <div className="bg-red-50 rounded-xl p-4 border border-red-200">
-                    <p className="text-xs font-bold text-red-700 uppercase mb-2 flex items-center gap-1"><AlertTriangle size={12} /> Top 5 Faltantes</p>
-                    {top5Missing.map(r => (
-                        <div key={r.vkey} className="flex justify-between text-xs py-1 border-b border-red-100 last:border-0">
-                            <span className="text-red-700">{r.mod} · {r.color} · {r.talla}</span>
-                            <span className="font-bold text-red-600">{r.diff}</span>
+                    <p className="text-xs font-bold text-red-700 uppercase mb-2">Top 5 Faltantes</p>
+                    {top5.map(r => <div key={r.vkey} className="flex justify-between text-xs py-1 border-b border-red-100 last:border-0"><span className="text-red-700">{r.mod} · {r.color} · {r.talla}</span><span className="font-bold text-red-600">{r.diff}</span></div>)}
+                </div>
+            )}
+
+            {areaChart.length > 0 && (
+                <div className="bg-white rounded-xl p-4 shadow-sm border">
+                    <p className="text-xs font-bold text-slate-600 uppercase mb-3">Escaneos por Área</p>
+                    {areaChart.map(({ area, count }) => (
+                        <div key={area} className="flex items-center gap-2 mb-2">
+                            <span className="text-xs text-slate-600 w-20 truncate">{area}</span>
+                            <div className="flex-1 bg-slate-100 rounded-full h-4"><div className="h-4 bg-sky-400 rounded-full" style={{ width: `${(count / areaChart[0].count) * 100}%` }} /></div>
+                            <span className="text-xs font-bold text-slate-600 w-8 text-right">{count}</span>
                         </div>
                     ))}
                 </div>
             )}
 
-            {/* Area chart */}
-            {areaChart.length > 0 && (
-                <div className="bg-white rounded-xl p-4 shadow-sm border">
-                    <p className="text-xs font-bold text-slate-600 uppercase mb-3">Escaneos por Área</p>
-                    {areaChart.map(({ area, count }) => {
-                        const max = areaChart[0].count;
-                        return (
-                            <div key={area} className="flex items-center gap-2 mb-2">
-                                <span className="text-xs text-slate-600 w-20 truncate">{area}</span>
-                                <div className="flex-1 bg-slate-100 rounded-full h-4 overflow-hidden">
-                                    <div className="h-4 bg-sky-400 rounded-full transition-all" style={{ width: `${(count / max) * 100}%` }} />
-                                </div>
-                                <span className="text-xs font-bold text-slate-600 w-8 text-right">{count}</span>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
-
-            {/* Filter + Group controls */}
             <div className="flex gap-2 flex-wrap">
                 {(['all', 'faltante', 'sobrante', 'ok'] as const).map(f => (
-                    <button key={f} onClick={() => setFilter(f)} className={`text-xs px-3 py-1.5 rounded-full border font-medium ${filter === f ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600'}`}>
+                    <button key={f} onClick={() => setFilter(f)} className={`text-xs px-3 py-1.5 rounded-full border font-medium ${filter === f ? 'bg-slate-800 text-white' : 'bg-white text-slate-600'}`}>
                         {f === 'all' ? 'Todos' : f.charAt(0).toUpperCase() + f.slice(1)}
-                        {f !== 'all' && <span className="ml-1 text-[10px]">({report.rows.filter(r => r.status === f).length})</span>}
+                        {f !== 'all' && <span className="ml-1">({report.rows.filter(r => r.status === f).length})</span>}
                     </button>
                 ))}
-                <div className="flex gap-1 ml-auto">
-                    {(['none', 'mod', 'color'] as const).map(g => (
-                        <button key={g} onClick={() => setGroupBy(g)} className={`text-xs px-2 py-1.5 rounded-full border ${groupBy === g ? 'bg-sky-500 text-white' : 'text-slate-500'}`}>
-                            {g === 'none' ? 'Sin agrupar' : g === 'mod' ? 'Por modelo' : 'Por color'}
-                        </button>
-                    ))}
-                </div>
+                <button onClick={exportCSV} className="ml-auto text-xs flex items-center gap-1 text-slate-500 border px-3 py-1.5 rounded-full"><Download size={12} /> CSV</button>
             </div>
 
-            {/* Export */}
-            <button onClick={exportCSV} className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-slate-200 rounded-xl py-3 text-slate-500 text-sm hover:border-sky-300 hover:text-sky-500 transition-colors">
-                <Download size={16} /> Exportar CSV
-            </button>
-
-            {/* Rows */}
             <div className="space-y-1">
                 {filtered.map(r => (
                     <div key={r.vkey} className="bg-white rounded-xl border overflow-hidden shadow-sm">
                         <button onClick={() => setExpandedKey(expandedKey === r.vkey ? null : r.vkey)} className="w-full text-left px-4 py-3 flex items-center gap-2">
-                            <div className="flex-1 min-w-0">
-                                <p className="text-sm font-semibold text-slate-800 truncate">{r.mod}</p>
-                                <p className="text-xs text-slate-500">{r.color} · Talla {r.talla}</p>
-                            </div>
-                            <div className="flex items-center gap-3 flex-shrink-0">
-                                <div className="text-right">
-                                    <p className="text-xs text-slate-400">Teo/Fís</p>
-                                    <p className="text-sm font-bold text-slate-700">{r.teo}/{r.fis}</p>
-                                </div>
-                                <span className={`text-sm font-bold w-8 text-right ${r.diff < 0 ? 'text-red-500' : r.diff > 0 ? 'text-emerald-500' : 'text-slate-400'}`}>
-                                    {r.diff > 0 ? '+' : ''}{r.diff}
-                                </span>
+                            <div className="flex-1 min-w-0"><p className="text-sm font-semibold text-slate-800 truncate">{r.mod}</p><p className="text-xs text-slate-500">{r.color} · Talla {r.talla}</p></div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                                <span className="text-sm font-bold text-slate-700">{r.teo}/{r.fis}</span>
+                                <span className={`text-sm font-bold w-8 text-right ${r.diff < 0 ? 'text-red-500' : r.diff > 0 ? 'text-emerald-500' : 'text-slate-400'}`}>{r.diff > 0 ? '+' : ''}{r.diff}</span>
                                 <div className={`w-2.5 h-2.5 rounded-full ${r.status === 'ok' ? 'bg-emerald-400' : r.status === 'faltante' ? 'bg-red-400' : 'bg-amber-400'}`} />
                                 {expandedKey === r.vkey ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
                             </div>
                         </button>
                         {expandedKey === r.vkey && Object.keys(r.areaMap).length > 0 && (
                             <div className="border-t bg-slate-50 px-4 py-2">
-                                <p className="text-xs font-semibold text-slate-500 mb-1">Distribución por área:</p>
-                                {Object.entries(r.areaMap).map(([a, c]) => (
-                                    <div key={a} className="flex justify-between text-xs text-slate-600 py-0.5">
-                                        <span>{a}</span><span className="font-bold">{c}</span>
-                                    </div>
-                                ))}
+                                {Object.entries(r.areaMap).map(([a, c]) => <div key={a} className="flex justify-between text-xs text-slate-600 py-0.5"><span>{a}</span><span className="font-bold">{c as number}</span></div>)}
                             </div>
                         )}
                     </div>
@@ -973,24 +1239,21 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
 };
 
 // ─── HISTORY TAB ──────────────────────────────────────────────────────────────
-const HistoryTab = ({ scans, folioId, folio, onDataChange, addToast, catalog }: {
+const HistoryTab = ({ scans, folioId, folio, onDataChange, addToast }: {
     scans: Scan[]; folioId: string | null; folio: Folio | null;
     onDataChange: () => void; addToast: (m: string, t?: ToastType) => void;
-    catalog: Catalog;
 }) => {
     const [search, setSearch] = useState('');
     const [selected, setSelected] = useState<Set<string>>(new Set());
-    const [editing, setEditing] = useState<string | null>(null);
 
     const filtered = useMemo(() => {
         const q = search.trim().toUpperCase();
-        return scans.filter(s => !q || s.mod.includes(q) || s.color.includes(q) || s.area.includes(q) || s.code.includes(q) || s.talla.includes(q));
+        return scans.filter(s => !q || s.mod?.includes(q) || s.color?.includes(q) || s.area?.includes(q) || s.code?.includes(q));
     }, [scans, search]);
 
     const handleDelete = async (s: Scan) => {
         if (!folioId) return;
-        await database.deleteScan(s.id, folioId, s.vkey);
-        onDataChange();
+        await fbDeleteScan(s.id, folioId, s.vkey, s.area, s.pos);
         addToast('Escaneo eliminado', 'info');
     };
 
@@ -999,19 +1262,10 @@ const HistoryTab = ({ scans, folioId, folio, onDataChange, addToast, catalog }: 
         if (!confirm(`¿Eliminar ${selected.size} escaneos?`)) return;
         for (const id of Array.from(selected)) {
             const s = scans.find(x => x.id === id);
-            if (s) await database.deleteScan(s.id, folioId, s.vkey);
+            if (s) await fbDeleteScan(s.id, folioId, s.vkey, s.area, s.pos);
         }
         setSelected(new Set());
-        onDataChange();
         addToast(`${selected.size} escaneos eliminados`, 'warning');
-    };
-
-    const toggleSelect = (id: string) => {
-        setSelected(prev => {
-            const n = new Set(prev);
-            n.has(id) ? n.delete(id) : n.add(id);
-            return n;
-        });
     };
 
     return (
@@ -1019,36 +1273,23 @@ const HistoryTab = ({ scans, folioId, folio, onDataChange, addToast, catalog }: 
             <div className="flex gap-2">
                 <div className="flex-1 relative">
                     <Search size={14} className="absolute left-3 top-3 text-slate-400" />
-                    <input className="w-full border rounded-xl pl-8 pr-4 py-2.5 text-sm" placeholder="Buscar escaneos..." value={search} onChange={e => setSearch(e.target.value)} />
+                    <input className="w-full border rounded-xl pl-8 pr-4 py-2.5 text-sm" placeholder="Buscar..." value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
-                {selected.size > 0 && (
-                    <button onClick={handleDeleteSelected} className="px-3 bg-red-50 text-red-600 border border-red-200 rounded-xl text-sm font-semibold">
-                        Eliminar ({selected.size})
-                    </button>
-                )}
+                {selected.size > 0 && <button onClick={handleDeleteSelected} className="px-3 bg-red-50 text-red-600 border border-red-200 rounded-xl text-sm font-semibold">Eliminar ({selected.size})</button>}
             </div>
             <p className="text-xs text-slate-400">{filtered.length} escaneos</p>
-
-            {filtered.length === 0 && (
-                <div className="text-center py-12 text-slate-400">
-                    <History className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                    <p>Sin historial</p>
-                </div>
-            )}
-
             <div className="space-y-2">
                 {filtered.map(s => (
-                    <div key={s.id} className={`bg-white rounded-xl border shadow-sm overflow-hidden ${selected.has(s.id) ? 'border-sky-400 bg-sky-50' : ''}`}>
-                        <div className="px-4 py-3 flex items-start gap-3">
-                            <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleSelect(s.id)} className="mt-1 w-4 h-4 rounded" />
-                            <div className="flex-1 min-w-0">
-                                <p className="font-semibold text-slate-800 text-sm truncate">{s.mod} · {s.color} · T{s.talla}</p>
-                                <p className="text-xs text-slate-500">{s.area} · #{s.pos} · {s.user}</p>
-                                <p className="text-xs text-slate-400">{formatDate(s.ts)}</p>
-                                <p className="text-xs font-mono text-slate-300">{s.code}</p>
-                            </div>
-                            <button onClick={() => handleDelete(s)} className="text-red-400 p-1 flex-shrink-0"><Trash2 size={16} /></button>
+                    <div key={s.id} className={`bg-white rounded-xl border shadow-sm px-4 py-3 flex items-start gap-3 ${selected.has(s.id) ? 'border-sky-400 bg-sky-50' : ''}`}>
+                        <input type="checkbox" checked={selected.has(s.id)} onChange={() => {
+                            setSelected(prev => { const n = new Set(prev); n.has(s.id) ? n.delete(s.id) : n.add(s.id); return n; });
+                        }} className="mt-1 w-4 h-4 rounded" />
+                        <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-slate-800 text-sm">{s.mod} · {s.color} · T{s.talla}</p>
+                            <p className="text-xs text-slate-500">{s.area} · #{s.pos} · {s.user}</p>
+                            <p className="text-xs text-slate-400">{formatDate(s.ts)}</p>
                         </div>
+                        <button onClick={() => handleDelete(s)} className="text-red-400"><Trash2 size={16} /></button>
                     </div>
                 ))}
             </div>
@@ -1057,74 +1298,105 @@ const HistoryTab = ({ scans, folioId, folio, onDataChange, addToast, catalog }: 
 };
 
 // ─── QUERY TAB ────────────────────────────────────────────────────────────────
-const QueryTab = ({ folioId, catalog, folio, scans }: {
-    folioId: string | null; catalog: Catalog;
-    folio: Folio | null; scans: Scan[];
-}) => {
+const QueryTab = ({ folio, scans }: { folio: Folio | null; scans: Scan[] }) => {
     const [query, setQuery] = useState('');
-    const [results, setResults] = useState<any[]>([]);
-
-    const doSearch = useCallback(() => {
-        if (!folio || !query.trim()) { setResults([]); return; }
+    const results = useMemo(() => {
+        if (!folio || !query.trim()) return [];
         const q = query.trim().toUpperCase();
-        const allKeys = new Set([...Object.keys(folio.theoreticalMap), ...Object.keys(folio.existenciasMap)]);
-        const rows = Array.from(allKeys)
-            .map(vkey => {
-                const parts = splitKey(vkey);
-                if (!parts.mod.includes(q) && !parts.color.includes(q) && !parts.talla.includes(q)) return null;
-                const teo = folio.theoreticalMap[vkey] || 0;
-                const fis = folio.existenciasMap[vkey] || 0;
-                const areaMap: { [a: string]: number } = {};
-                scans.filter(s => s.vkey === vkey).forEach(s => { areaMap[s.area] = (areaMap[s.area] || 0) + 1; });
-                return { vkey, teo, fis, diff: fis - teo, areaMap, ...parts };
-            })
-            .filter(Boolean) as any[];
-        setResults(rows);
+        const allKeys = new Set([...Object.keys(folio.theoreticalMap || {}), ...Object.keys(folio.existenciasMap || {})]);
+        return Array.from(allKeys).map(vkey => {
+            const parts = splitKey(vkey);
+            if (!parts.mod.includes(q) && !parts.color.includes(q) && !parts.talla.includes(q)) return null;
+            const teo = folio.theoreticalMap[vkey] || 0;
+            const fis = folio.existenciasMap[vkey] || 0;
+            const areaMap: { [a: string]: number } = {};
+            scans.filter(s => s.vkey === vkey).forEach(s => { areaMap[s.area] = (areaMap[s.area] || 0) + 1; });
+            return { vkey, teo, fis, diff: fis - teo, areaMap, ...parts };
+        }).filter(Boolean) as any[];
     }, [folio, query, scans]);
 
-    useEffect(() => { doSearch(); }, [doSearch]);
-
-    if (!folioId || !folio) return (
-        <div className="text-center py-12 text-slate-400">
-            <Search className="w-12 h-12 mx-auto mb-2 opacity-30" />
-            <p>Abre un inventario primero</p>
-        </div>
-    );
+    if (!folio) return <div className="text-center py-12 text-slate-400"><Search className="w-12 h-12 mx-auto mb-2 opacity-30" /><p>Abre un inventario primero</p></div>;
 
     return (
         <div className="space-y-4">
             <div className="relative">
                 <Search size={16} className="absolute left-3 top-3 text-slate-400" />
-                <input
-                    className="w-full border-2 border-sky-200 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-sky-400"
-                    placeholder="Buscar por modelo, color o talla..."
-                    value={query}
-                    onChange={e => setQuery(e.target.value)}
-                />
+                <input className="w-full border-2 border-sky-200 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-sky-400" placeholder="Buscar modelo, color o talla..." value={query} onChange={e => setQuery(e.target.value)} />
             </div>
-
-            {results.length > 0 && (
-                <p className="text-xs text-slate-400">{results.length} resultado(s)</p>
-            )}
-
-            <div className="space-y-2">
-                {results.map(r => (
-                    <div key={r.vkey} className="bg-white rounded-xl border shadow-sm p-4">
-                        <div className="flex justify-between items-start">
-                            <div>
-                                <p className="font-bold text-slate-800">{r.mod}</p>
-                                <p className="text-sm text-slate-500">{r.color} · Talla {r.talla}</p>
-                            </div>
-                            <div className="text-right">
-                                <p className="text-xs text-slate-400">Teo / Fís</p>
-                                <p className="text-lg font-bold text-slate-700">{r.teo} / <span className={r.fis >= r.teo ? 'text-emerald-600' : 'text-red-500'}>{r.fis}</span></p>
-                            </div>
+            {results.map(r => (
+                <div key={r.vkey} className="bg-white rounded-xl border shadow-sm p-4">
+                    <div className="flex justify-between items-start">
+                        <div><p className="font-bold text-slate-800">{r.mod}</p><p className="text-sm text-slate-500">{r.color} · Talla {r.talla}</p></div>
+                        <div className="text-right"><p className="text-xs text-slate-400">Teo / Fís</p><p className="text-lg font-bold">{r.teo} / <span className={r.fis >= r.teo ? 'text-emerald-600' : 'text-red-500'}>{r.fis}</span></p></div>
+                    </div>
+                    {Object.keys(r.areaMap).length > 0 && (
+                        <div className="mt-2 pt-2 border-t flex flex-wrap gap-2">
+                            {Object.entries(r.areaMap).map(([a, c]) => <span key={a} className="text-xs bg-sky-50 text-sky-700 px-2 py-0.5 rounded-full">{a}: {c as number}</span>)}
                         </div>
-                        {Object.keys(r.areaMap).length > 0 && (
-                            <div className="mt-2 pt-2 border-t flex flex-wrap gap-2">
-                                {Object.entries(r.areaMap).map(([a, c]) => (
-                                    <span key={a} className="text-xs bg-sky-50 text-sky-700 px-2 py-0.5 rounded-full">{a}: {c as number}</span>
-                                ))}
+                    )}
+                </div>
+            ))}
+        </div>
+    );
+};
+
+// ─── DICT TAB ─────────────────────────────────────────────────────────────────
+const DictTab = ({ colors, onUpdate, addToast }: { colors: ColorMap; onUpdate: (m: ColorMap) => void; addToast: (m: string, t?: ToastType) => void }) => {
+    const [search, setSearch] = useState('');
+    const [newName, setNewName] = useState('');
+    const [newCode, setNewCode] = useState('');
+    const [editing, setEditing] = useState<string | null>(null);
+    const [editCode, setEditCode] = useState('');
+
+    const COLOR_SWATCHES: { [k: string]: string } = {
+        'NEGRO': '#1a1a1a', 'BLANCO': '#f8f8f8', 'ROJO': '#dc2626', 'AZUL': '#2563eb',
+        'VERDE': '#16a34a', 'AMARILLO': '#eab308', 'NARANJA': '#ea580c', 'ROSA': '#ec4899',
+        'MORADO': '#9333ea', 'GRIS': '#6b7280', 'CAFE': '#92400e', 'MARINO': '#1e3a5f',
+        'BEIGE': '#d2b48c', 'MIEL': '#d4a017', 'CAMEL': '#c19a6b', 'CORAL': '#ff7f6e',
+        'MENTA': '#98d8c8', 'LILA': '#c084fc', 'FIUSHA': '#f0047f', 'TURQUESA': '#0e7490',
+    };
+    const getSwatch = (name: string) => { for (const [k, v] of Object.entries(COLOR_SWATCHES)) { if (name.toUpperCase().startsWith(k)) return v; } return null; };
+
+    const filtered = useMemo(() => {
+        const q = search.trim().toUpperCase();
+        return Object.entries(colors).filter(([n, c]) => !q || n.includes(q) || c.includes(q));
+    }, [colors, search]);
+
+    const handleAdd = () => {
+        const n = canonical(newName); const c = newCode.trim().padStart(3, '0').slice(-3);
+        if (!n || !c) { addToast('Completa nombre y código', 'warning'); return; }
+        onUpdate({ ...colors, [n]: c }); setNewName(''); setNewCode('');
+        addToast(`Color "${n}" agregado`, 'success');
+    };
+
+    return (
+        <div className="space-y-4">
+            <div className="relative"><Search size={14} className="absolute left-3 top-3 text-slate-400" /><input className="w-full border rounded-xl pl-8 pr-4 py-2.5 text-sm" placeholder="Buscar color..." value={search} onChange={e => setSearch(e.target.value)} /></div>
+            <div className="bg-white rounded-xl border p-4 shadow-sm">
+                <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Agregar color</p>
+                <div className="flex gap-2">
+                    <input className="flex-1 border rounded-lg p-2 text-sm" placeholder="Nombre" value={newName} onChange={e => setNewName(e.target.value.toUpperCase())} />
+                    <input className="w-20 border rounded-lg p-2 text-sm font-mono" placeholder="000" maxLength={3} value={newCode} onChange={e => setNewCode(e.target.value.replace(/\D/g, ''))} />
+                    <button onClick={handleAdd} className="bg-sky-500 text-white px-4 rounded-lg"><Plus size={16} /></button>
+                </div>
+            </div>
+            <p className="text-xs text-slate-400">{filtered.length} colores</p>
+            <div className="space-y-1">
+                {filtered.map(([name, code]) => (
+                    <div key={name} className="bg-white rounded-xl border shadow-sm px-4 py-2.5 flex items-center gap-3">
+                        <div className="w-7 h-7 rounded-full border border-slate-200 flex-shrink-0" style={{ backgroundColor: getSwatch(name) || `hsl(${parseInt(code) * 1.3 % 360}, 60%, 60%)` }} />
+                        <span className="flex-1 text-sm font-medium text-slate-700">{name}</span>
+                        {editing === name ? (
+                            <div className="flex gap-1">
+                                <input className="w-16 border rounded px-2 py-1 text-xs font-mono" value={editCode} onChange={e => setEditCode(e.target.value.replace(/\D/g, '').slice(0, 3))} />
+                                <button onClick={() => { onUpdate({ ...colors, [name]: editCode.padStart(3, '0').slice(-3) }); setEditing(null); addToast('Actualizado', 'success'); }} className="text-emerald-500"><Check size={16} /></button>
+                                <button onClick={() => setEditing(null)} className="text-slate-400"><X size={16} /></button>
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-mono bg-slate-100 px-2 py-0.5 rounded">{code}</span>
+                                <button onClick={() => { setEditing(name); setEditCode(code); }} className="text-slate-400"><Edit2 size={14} /></button>
+                                <button onClick={() => { if (!confirm(`¿Eliminar "${name}"?`)) return; const c = { ...colors }; delete c[name]; onUpdate(c); }} className="text-red-400"><Trash2 size={14} /></button>
                             </div>
                         )}
                     </div>
@@ -1134,201 +1406,43 @@ const QueryTab = ({ folioId, catalog, folio, scans }: {
     );
 };
 
-// ─── DICT TAB (Colors) ────────────────────────────────────────────────────────
-const DictTab = ({ colors, onUpdate, addToast }: {
-    colors: ColorMap; onUpdate: (m: ColorMap) => void;
-    addToast: (m: string, t?: ToastType) => void;
-}) => {
-    const [search, setSearch] = useState('');
-    const [newName, setNewName] = useState('');
-    const [newCode, setNewCode] = useState('');
-    const [editing, setEditing] = useState<string | null>(null);
-    const [editCode, setEditCode] = useState('');
-    const [showPreview, setShowPreview] = useState(true);
-
-    const COLOR_SWATCHES: { [name: string]: string } = {
-        'NEGRO': '#1a1a1a', 'BLANCO': '#f8f8f8', 'ROJO': '#dc2626', 'AZUL': '#2563eb',
-        'VERDE': '#16a34a', 'AMARILLO': '#eab308', 'NARANJA': '#ea580c', 'ROSA': '#ec4899',
-        'MORADO': '#9333ea', 'GRIS': '#6b7280', 'CAFE': '#92400e', 'MARINO': '#1e3a5f',
-        'BEIGE': '#d2b48c', 'MIEL': '#d4a017', 'CAMEL': '#c19a6b', 'CORAL': '#ff7f6e',
-        'MENTA': '#98d8c8', 'LILA': '#c084fc', 'FIUSHA': '#f0047f', 'TURQUESA': '#0e7490',
-        'DORADO': '#d4a017', 'PLATA': '#9ca3af', 'NUDE': '#f5e6da', 'TINTO': '#6b2737',
-        'VINO': '#722f37', 'OLIVO': '#6b7c3c', 'SALMON': '#fa8072', 'IVORY': '#fffff0',
-    };
-
-    const getSwatchColor = (name: string) => {
-        const n = name.toUpperCase();
-        for (const [k, v] of Object.entries(COLOR_SWATCHES)) {
-            if (n.startsWith(k)) return v;
-        }
-        return null;
-    };
-
-    const filtered = useMemo(() => {
-        const q = search.trim().toUpperCase();
-        return Object.entries(colors).filter(([name, code]) => !q || name.includes(q) || code.includes(q));
-    }, [colors, search]);
-
-    const handleAdd = () => {
-        const n = canonical(newName);
-        const c = newCode.trim().padStart(3, '0').slice(-3);
-        if (!n || !c) { addToast('Completa nombre y código', 'warning'); return; }
-        onUpdate({ ...colors, [n]: c });
-        setNewName(''); setNewCode('');
-        addToast(`Color "${n}" agregado`, 'success');
-    };
-
-    const handleEdit = (name: string) => {
-        setEditing(name);
-        setEditCode(colors[name]);
-    };
-
-    const handleSaveEdit = (name: string) => {
-        onUpdate({ ...colors, [name]: editCode.padStart(3, '0').slice(-3) });
-        setEditing(null);
-        addToast('Color actualizado', 'success');
-    };
-
-    const handleDelete = (name: string) => {
-        if (!confirm(`¿Eliminar el color "${name}"?`)) return;
-        const copy = { ...colors };
-        delete copy[name];
-        onUpdate(copy);
-        addToast(`Color "${name}" eliminado`, 'info');
-    };
-
-    return (
-        <div className="space-y-4">
-            <div className="flex gap-2">
-                <div className="flex-1 relative">
-                    <Search size={14} className="absolute left-3 top-3 text-slate-400" />
-                    <input className="w-full border rounded-xl pl-8 pr-4 py-2.5 text-sm" placeholder="Buscar color..." value={search} onChange={e => setSearch(e.target.value)} />
-                </div>
-                <button onClick={() => setShowPreview(p => !p)} className={`px-3 border rounded-xl text-sm ${showPreview ? 'bg-sky-50 text-sky-600 border-sky-200' : 'text-slate-400'}`}>
-                    <Eye size={16} />
-                </button>
-            </div>
-
-            {/* Add new */}
-            <div className="bg-white rounded-xl border p-4 shadow-sm">
-                <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Agregar color</p>
-                <div className="flex gap-2">
-                    <input className="flex-1 border rounded-lg p-2 text-sm" placeholder="Nombre del color" value={newName} onChange={e => setNewName(e.target.value.toUpperCase())} />
-                    <input className="w-20 border rounded-lg p-2 text-sm font-mono" placeholder="000" maxLength={3} value={newCode} onChange={e => setNewCode(e.target.value.replace(/\D/g, ''))} />
-                    <button onClick={handleAdd} className="bg-sky-500 text-white px-4 rounded-lg text-sm font-semibold"><Plus size={16} /></button>
-                </div>
-            </div>
-
-            <p className="text-xs text-slate-400">{filtered.length} colores</p>
-
-            <div className="grid grid-cols-1 gap-1">
-                {filtered.map(([name, code]) => (
-                    <div key={name} className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                        <div className="px-4 py-2.5 flex items-center gap-3">
-                            {showPreview && (
-                                <div className="w-7 h-7 rounded-full border border-slate-200 flex-shrink-0"
-                                    style={{ backgroundColor: getSwatchColor(name) || `hsl(${parseInt(code) * 1.3 % 360}, 60%, 60%)` }} />
-                            )}
-                            <span className="flex-1 text-sm font-medium text-slate-700">{name}</span>
-                            {editing === name ? (
-                                <div className="flex gap-1">
-                                    <input className="w-16 border rounded px-2 py-1 text-xs font-mono" value={editCode} onChange={e => setEditCode(e.target.value.replace(/\D/g, '').slice(0, 3))} />
-                                    <button onClick={() => handleSaveEdit(name)} className="text-emerald-500"><Check size={16} /></button>
-                                    <button onClick={() => setEditing(null)} className="text-slate-400"><X size={16} /></button>
-                                </div>
-                            ) : (
-                                <div className="flex items-center gap-2">
-                                    <span className="text-xs font-mono bg-slate-100 px-2 py-0.5 rounded text-slate-600">{code}</span>
-                                    <button onClick={() => handleEdit(name)} className="text-slate-400 hover:text-slate-600"><Edit2 size={14} /></button>
-                                    <button onClick={() => handleDelete(name)} className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-};
-
 // ─── DATABASE TAB ─────────────────────────────────────────────────────────────
 const DatabaseTab = ({ addToast }: { addToast: (m: string, t?: ToastType) => void }) => {
-    const [info, setInfo] = useState<any>(null);
     const [lastBackup, setLastBackup] = useState<string | null>(() => localStorage.getItem('conteo:lastBackup'));
 
-    useEffect(() => {
-        database.getDatabaseInfo().then(i => setInfo(i));
-    }, []);
-
     const handleExport = async () => {
-        const dump = await database.getFullDump();
+        const dump = await fbGetFullDump();
         const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `conteo-backup-${new Date().toISOString().split('T')[0]}.json`;
-        a.click();
+        const a = document.createElement('a'); a.href = url; a.download = `conteo-backup-${new Date().toISOString().split('T')[0]}.json`; a.click();
         const now = new Date().toLocaleString('es-MX');
-        setLastBackup(now);
-        localStorage.setItem('conteo:lastBackup', now);
+        setLastBackup(now); localStorage.setItem('conteo:lastBackup', now);
         addToast('Backup exportado', 'success');
     };
 
     const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
+        const file = e.target.files?.[0]; if (!file) return;
         try {
-            const text = await file.text();
-            const dump = JSON.parse(text);
-            await database.restoreFullDump(dump);
-            addToast('Backup restaurado. Recarga la página.', 'success');
-            setTimeout(() => window.location.reload(), 1500);
-        } catch {
-            addToast('Error al importar el backup', 'error');
-        }
-    };
-
-    const handleClear = async () => {
-        if (!confirm('⚠️ ESTO BORRARÁ TODOS LOS DATOS. ¿Confirmas?')) return;
-        // Clear all data
-        const dump = { folios: [], scans: [], settings: [], timestamp: Date.now() };
-        await database.restoreFullDump(dump);
-        addToast('Base de datos limpiada', 'warning');
-        setTimeout(() => window.location.reload(), 1000);
+            const dump = JSON.parse(await file.text());
+            await fbRestoreFullDump(dump);
+            addToast('Backup restaurado', 'success');
+        } catch { addToast('Error al importar', 'error'); }
     };
 
     return (
         <div className="space-y-4">
             <h2 className="font-bold text-slate-800 text-lg">Base de Datos</h2>
-
+            <div className="bg-emerald-50 rounded-xl border border-emerald-200 p-3 flex items-center gap-2 text-sm text-emerald-700">
+                <Wifi size={16} /> Conectado a Firebase Firestore — sincronización en tiempo real
+            </div>
             <div className="bg-white rounded-xl border p-4 shadow-sm space-y-3">
                 <p className="font-semibold text-slate-700 text-sm">Respaldo</p>
-                {lastBackup && (
-                    <div className="bg-emerald-50 rounded-lg px-3 py-2 text-xs text-emerald-700 flex items-center gap-2">
-                        <ShieldCheck size={14} /> Último respaldo: {lastBackup}
-                    </div>
-                )}
-                <button onClick={handleExport} className="w-full flex items-center justify-center gap-2 bg-sky-500 text-white rounded-xl py-3 font-semibold">
-                    <Download size={18} /> Exportar Backup (.json)
-                </button>
-                <label className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-slate-200 rounded-xl py-3 text-slate-500 cursor-pointer hover:border-sky-300 hover:text-sky-500 transition-colors">
+                {lastBackup && <div className="bg-emerald-50 rounded-lg px-3 py-2 text-xs text-emerald-700 flex items-center gap-2"><ShieldCheck size={14} /> Último respaldo: {lastBackup}</div>}
+                <button onClick={handleExport} className="w-full flex items-center justify-center gap-2 bg-sky-500 text-white rounded-xl py-3 font-semibold"><Download size={18} /> Exportar Backup (.json)</button>
+                <label className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-slate-200 rounded-xl py-3 text-slate-500 cursor-pointer hover:border-sky-300 hover:text-sky-500">
                     <Upload size={18} /> Restaurar Backup
                     <input type="file" accept=".json" className="hidden" onChange={handleImport} />
                 </label>
-            </div>
-
-            <div className="bg-red-50 rounded-xl border border-red-200 p-4 space-y-3">
-                <p className="font-semibold text-red-700 text-sm flex items-center gap-2"><AlertTriangle size={16} /> Zona de Peligro</p>
-                <button onClick={handleClear} className="w-full flex items-center justify-center gap-2 bg-red-500 text-white rounded-xl py-3 font-semibold">
-                    <Trash2 size={18} /> Limpiar Todo
-                </button>
-            </div>
-
-            <div className="bg-slate-50 rounded-xl border p-4 text-xs text-slate-500 space-y-1">
-                <p className="font-semibold text-slate-600 uppercase tracking-wide">Información Técnica</p>
-                <p>Motor: IndexedDB</p>
-                <p>Almacenamiento local en el dispositivo</p>
-                <p>App: Conteo Cíclico Pro v3.0</p>
             </div>
         </div>
     );
@@ -1340,112 +1454,58 @@ const InfoTab = () => (
         <div className="bg-gradient-to-br from-sky-500 to-sky-700 rounded-xl p-6 text-white text-center">
             <QrCode size={40} className="mx-auto mb-2 opacity-90" />
             <h1 className="text-2xl font-bold">Conteo Cíclico Pro</h1>
-            <p className="text-sky-200 text-sm">Versión 3.0</p>
+            <p className="text-sky-200 text-sm">Versión 3.1 · Firebase Sync</p>
         </div>
-
         {[
-            { icon: <ClipboardList size={18} className="text-sky-500" />, title: 'Inventarios (Folios)', desc: 'Crea y gestiona múltiples inventarios. Abre, cierra y agrega notas a cada uno.' },
-            { icon: <Boxes size={18} className="text-emerald-500" />, title: 'Cargar Teórico', desc: 'Pega el inventario esperado en formato MODELO COLOR TALLA CANTIDAD.' },
-            { icon: <QrCode size={18} className="text-amber-500" />, title: 'Escanear', desc: 'Escanea con lector físico o cámara. Soporte de racha y velocidad en tiempo real.' },
-            { icon: <BarChart3 size={18} className="text-purple-500" />, title: 'Reporte', desc: 'Visualiza diferencias, cobertura, top faltantes y distribución por área. Exporta CSV.' },
-            { icon: <Search size={18} className="text-rose-500" />, title: 'Consulta', desc: 'Busca SKUs específicos y ve su estado y distribución por área.' },
-            { icon: <History size={18} className="text-slate-500" />, title: 'Historial', desc: 'Revisa, filtra y elimina escaneos individuales o en masa.' },
-            { icon: <Palette size={18} className="text-pink-500" />, title: 'Diccionario de Colores', desc: 'Gestiona los códigos de color para decodificación de códigos de barras.' },
-            { icon: <Database size={18} className="text-indigo-500" />, title: 'Base de Datos', desc: 'Exporta e importa backups completos en JSON.' },
+            { icon: <Wifi size={18} className="text-emerald-500" />, title: 'Sincronización en Tiempo Real', desc: 'Todos los datos se sincronizan instantáneamente vía Firebase Firestore.' },
+            { icon: <Users size={18} className="text-sky-500" />, title: 'Multi-Scanner', desc: 'Múltiples scanners pueden escanear simultáneamente. El admin ve todo en tiempo real.' },
+            { icon: <PlayCircle size={18} className="text-amber-500" />, title: 'Sesiones Independientes', desc: 'Los scanners crean sesiones propias con área y operador, sin afectar los folios.' },
+            { icon: <BarChart3 size={18} className="text-purple-500" />, title: 'Reporte en Vivo', desc: 'Cobertura, faltantes y distribución por área actualizados al instante.' },
         ].map((item, i) => (
             <div key={i} className="bg-white rounded-xl border p-4 shadow-sm flex gap-3">
                 <div className="flex-shrink-0 mt-0.5">{item.icon}</div>
-                <div>
-                    <p className="font-semibold text-slate-700 text-sm">{item.title}</p>
-                    <p className="text-xs text-slate-500 mt-0.5">{item.desc}</p>
-                </div>
+                <div><p className="font-semibold text-slate-700 text-sm">{item.title}</p><p className="text-xs text-slate-500 mt-0.5">{item.desc}</p></div>
             </div>
         ))}
-
-        <div className="bg-slate-50 rounded-xl border p-4 text-xs text-slate-400 text-center">
-            <p>Formato código de barras: <span className="font-mono">0 MMMMM CCC SSS</span></p>
-            <p className="mt-1">M=Modelo · C=Color · S=Talla×10</p>
-        </div>
     </div>
 );
 
 // ─── LOGIN SCREEN ─────────────────────────────────────────────────────────────
-const LoginScreen = ({ onLogin, onInstall }: { onLogin: (r: Role) => void; onInstall?: () => void }) => {
+const LoginScreen = ({ onLogin }: { onLogin: (r: Role) => void }) => {
     const [pass, setPass] = useState('');
-    const [showHelp, setShowHelp] = useState(false);
     const [loading, setLoading] = useState(false);
 
-    const hashPass = async (p: string) => {
-        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(p));
-        return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-    };
-
-    const ADMIN_HASH = '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918'; // "admin"
+    const ADMIN_HASH = '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918';
 
     const handleAdmin = async () => {
         setLoading(true);
-        const h = await hashPass(pass);
+        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pass));
+        const hash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
         setLoading(false);
-        if (h === ADMIN_HASH) {
-            onLogin('admin');
-        } else {
-            alert('Contraseña incorrecta');
-        }
+        if (hash === ADMIN_HASH) onLogin('admin');
+        else alert('Contraseña incorrecta');
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800 p-6 relative">
-            <button onClick={onInstall || (() => setShowHelp(true))}
-                className="absolute top-4 right-4 bg-sky-500 text-white px-4 py-2 rounded-full font-bold shadow-lg flex items-center text-sm z-50">
-                <Download size={14} className="mr-2" /> Instalar App
-            </button>
-
-            {showHelp && (
-                <div className="absolute top-16 right-4 bg-white p-4 rounded-xl shadow-xl max-w-xs z-50 text-sm text-slate-700">
-                    <p className="font-bold mb-2">Instalación Manual:</p>
-                    <ul className="list-disc ml-4 space-y-1 text-xs">
-                        <li><b>Android (Chrome):</b> Menú (⋮) → Instalar aplicación.</li>
-                        <li><b>iOS (Safari):</b> Botón Compartir → Agregar a Inicio.</li>
-                    </ul>
-                    <button onClick={() => setShowHelp(false)} className="mt-3 text-xs text-sky-600 underline w-full text-right">Cerrar</button>
-                </div>
-            )}
-
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800 p-6">
             <div className="w-full max-w-sm space-y-6">
                 <div className="text-center text-white">
-                    <div className="w-20 h-20 bg-sky-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-2xl">
-                        <QrCode size={40} className="text-white" />
-                    </div>
+                    <div className="w-20 h-20 bg-sky-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-2xl"><QrCode size={40} className="text-white" /></div>
                     <h1 className="text-2xl font-bold">Conteo Cíclico Pro</h1>
-                    <p className="text-slate-400 text-sm">Sistema de Inventario</p>
+                    <p className="text-slate-400 text-sm">v3.1 · Firebase Sync</p>
                 </div>
-
                 <div className="bg-sky-500 rounded-2xl p-6 text-center shadow-xl">
                     <QrCode size={36} className="mx-auto text-white mb-3 opacity-90" />
-                    <p className="text-white text-sm font-medium mb-4">Acceso rápido para escaners</p>
+                    <p className="text-white text-sm font-medium mb-4">Acceso rápido para scanners</p>
                     <button onClick={() => onLogin('scanner')} className="w-full bg-white text-sky-600 font-bold py-3 rounded-xl text-lg shadow-md active:scale-95 transition-transform">
                         Iniciar Escaneo
                     </button>
-                    <p className="text-sky-200 text-[10px] mt-2">Se une automáticamente al inventario activo</p>
+                    <p className="text-sky-200 text-[10px] mt-2">Sincronización en tiempo real con el admin</p>
                 </div>
-
-                <div className="relative flex items-center">
-                    <div className="flex-grow border-t border-slate-600"></div>
-                    <span className="mx-4 text-slate-400 text-xs">ADMINISTRADOR</span>
-                    <div className="flex-grow border-t border-slate-600"></div>
-                </div>
-
+                <div className="relative flex items-center"><div className="flex-grow border-t border-slate-600"></div><span className="mx-4 text-slate-400 text-xs">ADMINISTRADOR</span><div className="flex-grow border-t border-slate-600"></div></div>
                 <div className="bg-white bg-opacity-10 rounded-2xl p-5 space-y-3">
-                    <input
-                        type="password"
-                        placeholder="Contraseña de administrador"
-                        className="w-full bg-white bg-opacity-20 border border-white border-opacity-30 rounded-xl p-3 text-white placeholder-slate-400 focus:outline-none focus:border-sky-400"
-                        value={pass}
-                        onChange={e => setPass(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && handleAdmin()}
-                    />
-                    <button onClick={handleAdmin} disabled={loading}
-                        className="w-full bg-white text-slate-800 font-bold py-3 rounded-xl shadow-md active:scale-95 transition-transform disabled:opacity-50">
+                    <input type="password" placeholder="Contraseña de administrador" className="w-full bg-white bg-opacity-20 border border-white border-opacity-30 rounded-xl p-3 text-white placeholder-slate-400 focus:outline-none focus:border-sky-400" value={pass} onChange={e => setPass(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAdmin()} />
+                    <button onClick={handleAdmin} disabled={loading} className="w-full bg-white text-slate-800 font-bold py-3 rounded-xl shadow-md active:scale-95 transition-transform disabled:opacity-50">
                         {loading ? 'Verificando...' : 'Ingresar como Admin'}
                     </button>
                 </div>
@@ -1458,26 +1518,16 @@ const LoginScreen = ({ onLogin, onInstall }: { onLogin: (r: Role) => void; onIns
 const App: React.FC = () => {
     const [role, setRole] = useState<Role | null>(null);
     const [activeTab, setActiveTab] = useState<Tab>('folio');
-    const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-
     const [folioId, setFolioId] = useState<string | null>(null);
     const [folio, setFolio] = useState<Folio | null>(null);
     const [catalog, setCatalog] = useState<Catalog>({ byBarcode: {}, byVariant: {} });
     const [scans, setScans] = useState<Scan[]>([]);
     const [colors, setColors] = useState<ColorMap>(DEFAULT_COLORS);
-
     const [toasts, setToasts] = useState<Toast[]>([]);
     const [confetti, setConfetti] = useState(false);
-    const [startTime] = useState<number>(Date.now());
+    const [startTime] = useState(Date.now());
     const [elapsed, setElapsed] = useState(0);
-    const [isOnboarded] = useState(() => localStorage.getItem('conteo:onboarded') === '1');
 
-    // Onboarding
-    useEffect(() => {
-        if (!isOnboarded) localStorage.setItem('conteo:onboarded', '1');
-    }, [isOnboarded]);
-
-    // Timer
     useEffect(() => {
         if (!role) return;
         const interval = setInterval(() => setElapsed(Math.floor((Date.now() - startTime) / 1000)), 1000);
@@ -1485,9 +1535,7 @@ const App: React.FC = () => {
     }, [role, startTime]);
 
     const formatElapsed = () => {
-        const h = Math.floor(elapsed / 3600);
-        const m = Math.floor((elapsed % 3600) / 60);
-        const s = elapsed % 60;
+        const h = Math.floor(elapsed / 3600), m = Math.floor((elapsed % 3600) / 60), s = elapsed % 60;
         return `${h > 0 ? h + 'h ' : ''}${m}m ${s}s`;
     };
 
@@ -1497,92 +1545,52 @@ const App: React.FC = () => {
         setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500);
     }, []);
 
-    const removeToast = useCallback((id: string) => setToasts(prev => prev.filter(t => t.id !== id)), []);
-
-    // Confetti on milestones
     useEffect(() => {
         const milestones = [100, 500, 1000];
         if (milestones.includes(scans.length)) {
             setConfetti(true);
             setTimeout(() => setConfetti(false), 3000);
-            addToast(`🎉 ¡${scans.length} escaneos! ¡Excelente trabajo!`, 'success');
+            addToast(`🎉 ¡${scans.length} escaneos!`, 'success');
         }
     }, [scans.length]);
 
     useEffect(() => {
-        const start = async () => {
-            await database.seedDatabase();
-            const c = await database.loadSettings('catalog');
-            if (c) setCatalog(c);
-            const cm = await database.loadSettings('colors');
-            if (cm) setColors(prev => ({ ...prev, ...cm }));
-        };
-        start();
-
-        const handleBeforeInstall = (e: any) => { e.preventDefault(); setDeferredPrompt(e); };
-        window.addEventListener('beforeinstallprompt', handleBeforeInstall);
-        return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+        fbLoadSettings('catalog').then(c => { if (c) setCatalog(c); });
+        fbLoadSettings('colors').then(cm => { if (cm) setColors(prev => ({ ...prev, ...cm })); });
     }, []);
 
     useEffect(() => {
         if (!folioId) return;
-        const unsubFolio = database.subscribeToFolio(folioId, data => { if (data) setFolio(data); });
-        const unsubScans = database.subscribeToScans(folioId, data => { setScans(data.sort((a, b) => b.ts - a.ts)); });
+        const unsubFolio = fbSubscribeToFolio(folioId, data => { if (data) setFolio(data as Folio); });
+        const unsubScans = fbSubscribeToScans(folioId, data => { setScans(data as Scan[]); });
         return () => { unsubFolio(); unsubScans(); };
     }, [folioId]);
 
     const handleLogin = async (r: Role) => {
         setRole(r);
         if (r === 'scanner') {
-            let f = await database.getLastOpenFolio();
-            if (!f) {
-                const newId = 'F-' + Date.now().toString(36).toUpperCase();
-                f = { id: newId, name: 'Inventario General', almacen: 'Tienda', state: 'open', theoreticalMap: {}, existenciasMap: {}, areaCounters: {}, createdAt: Date.now() };
-                await database.createFolio(f);
-            }
-            setFolioId(f.id); setFolio(f); setActiveTab('escanear');
+            setActiveTab('escanear');
         } else {
             setActiveTab('folio');
         }
     };
 
-    const handleInstallClick = async () => {
-        if (!deferredPrompt) {
-            alert('Para instalar:\nAndroid: Menú (⋮) → Instalar app\niOS: Compartir → Agregar a Inicio');
-            return;
-        }
-        deferredPrompt.prompt();
-        await deferredPrompt.userChoice;
-        setDeferredPrompt(null);
-    };
+    const handleUpdateColorMap = (m: ColorMap) => { setColors(m); fbSaveSettings('colors', m); };
+    const handleUpdateCatalog = (c: Catalog) => { setCatalog(c); };
+    const handleTabChange = useCallback((t: Tab) => { setActiveTab(t); window.scrollTo(0, 0); }, []);
 
-    const handleUpdateColorMap = (m: ColorMap) => { setColors(m); database.saveSettings('colors', m); };
-    const handleUpdateCatalog = (c: Catalog) => { setCatalog(c); database.saveSettings('catalog', c); };
+    if (!role) return <LoginScreen onLogin={handleLogin} />;
 
-    const handleJoinFolio = (id: string) => {
-        setFolioId(id);
-        setActiveTab('reporte');
-    };
-
-    const handleCreateFolio = (id: string) => {
-        setFolioId(id);
-    };
-
-    const handleTabChange = useCallback((t: Tab) => {
-        setActiveTab(t);
-        window.scrollTo(0, 0);
-    }, []);
-
-    if (!role) return <LoginScreen onLogin={handleLogin} onInstall={handleInstallClick} />;
-
+    // Tabs config
     const tabs = [
-        { id: 'folio', label: 'Inventario', icon: <FileText />, roles: ['admin'] },
+        { id: 'folio', label: 'Inventarios', icon: <FileText />, roles: ['admin'] },
         { id: 'existencias', label: 'Cargar', icon: <Boxes />, roles: ['admin'] },
         { id: 'escanear', label: 'Escanear', icon: <QrCode />, roles: ['admin', 'scanner'] },
-        { id: 'reporte', label: 'Reporte', icon: <BarChart3 />, roles: ['admin'], badge: folio ? Object.values(folio.theoreticalMap || {}).reduce((a,b)=>a+b,0) - Object.values(folio.existenciasMap || {}).reduce((a,b)=>a+b,0) : 0 },
+        { id: 'sesiones', label: 'Sesiones', icon: <Users />, roles: ['admin'], badge: 0 },
+        { id: 'reporte', label: 'Reporte', icon: <BarChart3 />, roles: ['admin'] },
         { id: 'consulta', label: 'Consulta', icon: <Search />, roles: ['admin'] },
-        { id: 'historial', label: 'Historial', icon: <History />, roles: ['admin', 'scanner'], badge: scans.length },
-        { id: 'colores', label: 'Diccionario', icon: <Palette />, roles: ['admin'] },
+        { id: 'historial', label: 'Historial', icon: <History />, roles: ['admin'] },
+        { id: 'colores', label: 'Colores', icon: <Palette />, roles: ['admin'] },
         { id: 'database', label: 'DB', icon: <Database />, roles: ['admin'] },
         { id: 'info', label: 'Info', icon: <BookOpen />, roles: ['admin'] },
     ];
@@ -1591,104 +1599,58 @@ const App: React.FC = () => {
 
     return (
         <div className="flex flex-col h-screen bg-slate-50">
-            <ToastContainer toasts={toasts} onRemove={removeToast} />
+            <ToastContainer toasts={toasts} onRemove={id => setToasts(prev => prev.filter(t => t.id !== id))} />
             <Confetti active={confetti} />
 
             {/* Header */}
             <header className="bg-white border-b px-4 py-3 flex justify-between items-center shadow-sm z-10 flex-shrink-0">
                 <div className="flex items-center gap-2 overflow-hidden">
-                    {folio ? (
+                    {folio && role === 'admin' ? (
                         <div className="flex flex-col">
                             <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider leading-none">Inventario Activo</span>
                             <span className="font-bold text-slate-800 text-sm truncate max-w-[140px] sm:max-w-xs">{folio.name}</span>
                         </div>
-                    ) : (
-                        <span className="font-bold text-slate-800 text-sm">Conteo Cíclico Pro</span>
-                    )}
+                    ) : <span className="font-bold text-slate-800 text-sm">Conteo Cíclico Pro</span>}
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                    {role === 'admin' && (
-                        <div className="flex items-center gap-1 text-xs text-slate-400">
-                            <Timer size={12} />{formatElapsed()}
-                        </div>
-                    )}
+                    <div className="flex items-center gap-1 text-xs text-emerald-500 font-medium">
+                        <Wifi size={12} /> Live
+                    </div>
+                    {role === 'admin' && <div className="flex items-center gap-1 text-xs text-slate-400"><Timer size={12} />{formatElapsed()}</div>}
                     <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${role === 'admin' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}`}>{role}</span>
-                    <button onClick={() => { setRole(null); setFolioId(null); setFolio(null); setScans([]); }}
-                        className="p-1.5 text-red-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors">
-                        <LogOut size={18} />
-                    </button>
+                    <button onClick={() => { setRole(null); setFolioId(null); setFolio(null); setScans([]); }} className="p-1.5 text-red-400 hover:text-red-600 rounded-lg hover:bg-red-50"><LogOut size={18} /></button>
                 </div>
             </header>
 
-            {/* Main Content */}
+            {/* Main */}
             <main className="flex-1 overflow-auto p-4 pb-24">
-                {!folio && !isOnboarded && role === 'admin' && (
-                    <div className="mb-4 bg-sky-50 border border-sky-200 rounded-xl p-4 flex gap-3">
-                        <Sparkles size={20} className="text-sky-500 flex-shrink-0 mt-0.5" />
-                        <div>
-                            <p className="text-sm font-semibold text-sky-700">¡Bienvenido a Conteo Cíclico Pro!</p>
-                            <p className="text-xs text-sky-600 mt-0.5">Crea tu primer inventario, carga el teórico y comienza a escanear.</p>
-                        </div>
-                    </div>
-                )}
-
                 <ErrorBoundary tab={activeTab}>
-                    {activeTab === 'folio' && role === 'admin' && (
-                        <FolioTab onJoin={handleJoinFolio} onCreate={handleCreateFolio} addToast={addToast} colors={colors} catalog={catalog} />
-                    )}
-                    {activeTab === 'existencias' && role === 'admin' && (
-                        <StockTab folioId={folioId} catalog={catalog} colors={colors} onUpdate={handleUpdateCatalog} addToast={addToast} />
-                    )}
-                    {activeTab === 'escanear' && (
-                        <ScanTab folio={folio} catalog={catalog} colors={colors} onScan={() => {}} scans={scans} role={role!} addToast={addToast} />
-                    )}
-                    {activeTab === 'reporte' && role === 'admin' && (
-                        <ReportTab folio={folio} scans={scans} onTabChange={handleTabChange} addToast={addToast} />
-                    )}
-                    {activeTab === 'consulta' && role === 'admin' && (
-                        <QueryTab folioId={folioId} catalog={catalog} folio={folio} scans={scans} />
-                    )}
-                    {activeTab === 'historial' && (
-                        <HistoryTab scans={scans} folioId={folioId} folio={folio} onDataChange={() => {}} addToast={addToast} catalog={catalog} />
-                    )}
-                    {activeTab === 'colores' && role === 'admin' && (
-                        <DictTab colors={colors} onUpdate={handleUpdateColorMap} addToast={addToast} />
-                    )}
-                    {activeTab === 'database' && role === 'admin' && (
-                        <DatabaseTab addToast={addToast} />
-                    )}
-                    {activeTab === 'info' && role === 'admin' && (
-                        <InfoTab />
-                    )}
+                    {activeTab === 'folio' && role === 'admin' && <FolioTab onJoin={(id) => { setFolioId(id); setActiveTab('reporte'); }} onCreate={(id) => setFolioId(id)} addToast={addToast} colors={colors} catalog={catalog} />}
+                    {activeTab === 'existencias' && role === 'admin' && <StockTab folioId={folioId} catalog={catalog} colors={colors} onUpdate={handleUpdateCatalog} addToast={addToast} />}
+                    {activeTab === 'escanear' && role === 'scanner' && <ScannerSessionTab colors={colors} catalog={catalog} addToast={addToast} />}
+                    {activeTab === 'escanear' && role === 'admin' && <ScanTab folio={folio} catalog={catalog} colors={colors} scans={scans} role={role} addToast={addToast} />}
+                    {activeTab === 'sesiones' && role === 'admin' && <SessionsAdminTab addToast={addToast} />}
+                    {activeTab === 'reporte' && role === 'admin' && <ReportTab folio={folio} scans={scans} onTabChange={handleTabChange} addToast={addToast} />}
+                    {activeTab === 'consulta' && role === 'admin' && <QueryTab folio={folio} scans={scans} />}
+                    {activeTab === 'historial' && role === 'admin' && <HistoryTab scans={scans} folioId={folioId} folio={folio} onDataChange={() => {}} addToast={addToast} />}
+                    {activeTab === 'colores' && role === 'admin' && <DictTab colors={colors} onUpdate={handleUpdateColorMap} addToast={addToast} />}
+                    {activeTab === 'database' && role === 'admin' && <DatabaseTab addToast={addToast} />}
+                    {activeTab === 'info' && role === 'admin' && <InfoTab />}
                 </ErrorBoundary>
             </main>
 
             {/* Bottom Nav */}
             <nav className="bg-white border-t flex justify-around fixed bottom-0 w-full z-20 overflow-x-auto py-1">
                 {visibleTabs.map(t => (
-                    <button
-                        key={t.id}
-                        onClick={() => handleTabChange(t.id as Tab)}
-                        className={`flex flex-col items-center px-2 py-2 min-w-[52px] rounded-xl transition-all relative ${activeTab === t.id ? 'text-sky-600 bg-sky-50' : 'text-slate-400 hover:text-slate-600'}`}
-                    >
-                        {t.badge != null && t.badge > 0 && (
-                            <span className="absolute top-1 right-1 bg-red-500 text-white text-[9px] font-bold rounded-full min-w-[14px] h-3.5 flex items-center justify-center px-0.5">
-                                {t.badge > 99 ? '99+' : t.badge}
-                            </span>
-                        )}
+                    <button key={t.id} onClick={() => handleTabChange(t.id as Tab)} className={`flex flex-col items-center px-2 py-2 min-w-[48px] rounded-xl transition-all relative ${activeTab === t.id ? 'text-sky-600 bg-sky-50' : 'text-slate-400'}`}>
                         <div className="w-5 h-5">{t.icon}</div>
-                        <span className="text-[9px] font-medium mt-0.5 whitespace-nowrap leading-tight">{t.label}</span>
+                        <span className="text-[9px] font-medium mt-0.5 whitespace-nowrap">{t.label}</span>
                     </button>
                 ))}
             </nav>
 
-            {/* Global CSS for animations */}
             <style>{`
-                @keyframes slide-in { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
                 @keyframes confetti { from { transform: translateY(-20px) rotate(0deg); opacity: 1; } to { transform: translateY(100vh) rotate(720deg); opacity: 0; } }
-                .animate-slide-in { animation: slide-in 0.3s ease-out; }
-                .animate-confetti { animation: confetti linear forwards; }
-                .pb-safe { padding-bottom: env(safe-area-inset-bottom, 16px); }
             `}</style>
         </div>
     );

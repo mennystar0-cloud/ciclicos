@@ -555,6 +555,9 @@ const SessionsAdminTab = ({ addToast }: { addToast: (m: string, t?: ToastType) =
         return () => unsub();
     }, []);
 
+    // Nota: Las sesiones se muestran desde la colección scanSessions (flujo ScannerSessionTab)
+    // El ScanTab principal registra scans directo en el folio — ver pestaña Reporte para cruce completo
+
     const loadItems = async (sessionId: string) => {
         if (items[sessionId]) { setExpanded(expanded === sessionId ? null : sessionId); return; }
         setLoadingItems(sessionId);
@@ -963,7 +966,7 @@ const ScanTab = ({ folio, catalog, colors, scans, role, addToast }: {
     scans: Scan[]; role: Role; addToast: (m: string, t?: ToastType) => void;
 }) => {
     const [barcode, setBarcode] = useState('');
-    const [area, setArea] = useState('ÁREA-A');
+    const [area, setArea] = useState('');
     const [customAreas, setCustomAreas] = useState<string[]>([]);
     const [newArea, setNewArea] = useState('');
     const [user, setUser] = useState(() => localStorage.getItem('conteo:user') || 'Scanner');
@@ -982,6 +985,9 @@ const ScanTab = ({ folio, catalog, colors, scans, role, addToast }: {
     useEffect(() => {
         const saved = JSON.parse(localStorage.getItem('conteo:customAreas') || '[]');
         setCustomAreas(saved);
+        const lastArea = localStorage.getItem('conteo:lastArea') || '';
+        if (lastArea && saved.includes(lastArea)) setArea(lastArea);
+        else if (saved.length > 0) setArea(saved[0]);
     }, []);
 
     useEffect(() => {
@@ -1008,6 +1014,7 @@ const ScanTab = ({ folio, catalog, colors, scans, role, addToast }: {
 
     const handleScan = useCallback(async (code: string) => {
         if (!folio || folio.state !== 'open') { addToast('No hay inventario activo', 'warning'); return; }
+        if (!area.trim()) { addToast('Selecciona o registra un área primero', 'warning'); return; }
         const clean = code.trim();
         if (!clean) return;
         setBarcode('');
@@ -1083,7 +1090,9 @@ const ScanTab = ({ folio, catalog, colors, scans, role, addToast }: {
         const updated = [...customAreas, a];
         setCustomAreas(updated);
         localStorage.setItem('conteo:customAreas', JSON.stringify(updated));
-        setArea(a); setNewArea('');
+        setArea(prev => prev === '' ? a : prev);
+        if (!area) setArea(a);
+        setNewArea('');
     };
 
     const coveragePct = folio ? (() => {
@@ -1094,7 +1103,7 @@ const ScanTab = ({ folio, catalog, colors, scans, role, addToast }: {
 
     if (!folio) return <div className="text-center py-12 text-slate-400"><QrCode className="w-12 h-12 mx-auto mb-2 opacity-30" /><p>No hay inventario activo</p></div>;
 
-    const allAreas = ['ÁREA-A', 'ÁREA-B', 'ÁREA-C', 'ÁREA-D', 'BODEGA', ...customAreas];
+    const allAreas = customAreas;
 
     return (
         <div className={`space-y-4 transition-colors duration-300 ${flash === 'ok' ? 'bg-emerald-50' : flash === 'err' ? 'bg-red-50' : ''} rounded-xl`}>
@@ -1107,14 +1116,30 @@ const ScanTab = ({ folio, catalog, colors, scans, role, addToast }: {
 
             <div className="bg-white rounded-xl p-4 shadow-sm border flex items-center gap-4">
                 <CoverageRing pct={coveragePct} />
-                <div><p className="font-semibold text-slate-700 text-sm">Cobertura</p><p className="text-xs text-slate-500">{folio.name}</p></div>
+                <div className="flex-1">
+                    <p className="font-semibold text-slate-700 text-sm">{folio.name}</p>
+                    <div className="flex gap-4 mt-1">
+                        <div>
+                            <p className="text-[10px] text-slate-400 uppercase tracking-wide">Teórico</p>
+                            <p className="text-lg font-bold text-slate-700">{Object.values(folio.theoreticalMap || {}).reduce((a,b)=>a+b,0).toLocaleString()}</p>
+                        </div>
+                        <div>
+                            <p className="text-[10px] text-slate-400 uppercase tracking-wide">Escaneado</p>
+                            <p className="text-lg font-bold text-sky-600">{Object.values(folio.existenciasMap || {}).reduce((a,b)=>a+b,0).toLocaleString()}</p>
+                        </div>
+                        <div>
+                            <p className="text-[10px] text-slate-400 uppercase tracking-wide">Pendiente</p>
+                            <p className="text-lg font-bold text-amber-500">{Math.max(0, Object.values(folio.theoreticalMap || {}).reduce((a,b)=>a+b,0) - Object.values(folio.existenciasMap || {}).reduce((a,b)=>a+b,0)).toLocaleString()}</p>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div>
                 <p className="text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide">Área actual</p>
                 <div className="flex flex-wrap gap-2">
                     {allAreas.map(a => (
-                        <button key={a} onClick={() => setArea(a)} className={`px-3 py-1.5 rounded-full text-sm font-medium border ${area === a ? 'bg-sky-500 text-white border-sky-500' : 'bg-white text-slate-600 border-slate-200'}`}>{a}</button>
+                        <button key={a} onClick={() => { setArea(a); localStorage.setItem('conteo:lastArea', a); }} className={`px-3 py-1.5 rounded-full text-sm font-medium border ${area === a ? 'bg-sky-500 text-white border-sky-500' : 'bg-white text-slate-600 border-slate-200'}`}>{a}</button>
                     ))}
                     <div className="flex gap-1">
                         <input className="border rounded-full px-3 py-1.5 text-sm w-28" placeholder="Nueva área" value={newArea} onChange={e => setNewArea(e.target.value.toUpperCase())} onKeyDown={e => e.key === 'Enter' && addCustomArea()} />
@@ -1820,7 +1845,7 @@ const App: React.FC = () => {
     const tabs = [
         { id: 'folio', label: 'Inventarios', icon: <FileText />, roles: ['admin'] },
         { id: 'existencias', label: 'Cargar', icon: <Boxes />, roles: ['admin'] },
-        { id: 'escanear', label: 'Escanear', icon: <QrCode />, roles: ['admin', 'scanner'] },
+        { id: 'escanear', label: 'Escanear', icon: <QrCode />, roles: ['scanner'] },
         { id: 'sesiones', label: 'Sesiones', icon: <Users />, roles: ['admin'], badge: 0 },
         { id: 'reporte', label: 'Reporte', icon: <BarChart3 />, roles: ['admin'] },
         { id: 'consulta', label: 'Consulta', icon: <Search />, roles: ['admin'] },
@@ -1830,7 +1855,7 @@ const App: React.FC = () => {
         { id: 'info', label: 'Info', icon: <BookOpen />, roles: ['admin'] },
     ];
 
-    const visibleTabs = tabs.filter(t => t.roles.includes(role!));
+    const visibleTabs = role === 'scanner' ? [] : tabs.filter(t => t.roles.includes(role!));
 
     return (
         <div className="flex flex-col h-screen bg-slate-50">
@@ -1858,11 +1883,11 @@ const App: React.FC = () => {
             </header>
 
             {/* Main */}
-            <main className="flex-1 overflow-auto p-4 pb-24">
+            <main className={`flex-1 overflow-auto p-4 ${role === 'admin' ? 'pb-24' : 'pb-4'}`}>
                 <ErrorBoundary tab={activeTab}>
                     {activeTab === 'folio' && role === 'admin' && <FolioTab onJoin={(id) => { setFolioId(id); setActiveTab('reporte'); }} onCreate={(id) => setFolioId(id)} addToast={addToast} colors={colors} catalog={catalog} />}
                     {activeTab === 'existencias' && role === 'admin' && <StockTab folioId={folioId} catalog={catalog} colors={colors} onUpdate={handleUpdateCatalog} addToast={addToast} />}
-                    {activeTab === 'escanear' && <ScanTab folio={folio} catalog={catalog} colors={colors} scans={scans} role={role!} addToast={addToast} />}
+                    {activeTab === 'escanear' && role === 'scanner' && <ScannerSessionTab colors={colors} catalog={catalog} addToast={addToast} />}
                     {activeTab === 'sesiones' && role === 'admin' && <SessionsAdminTab addToast={addToast} />}
                     {activeTab === 'reporte' && role === 'admin' && <ReportTab folio={folio} scans={scans} onTabChange={handleTabChange} addToast={addToast} />}
                     {activeTab === 'consulta' && role === 'admin' && <QueryTab folio={folio} scans={scans} />}
@@ -1873,15 +1898,17 @@ const App: React.FC = () => {
                 </ErrorBoundary>
             </main>
 
-            {/* Bottom Nav */}
-            <nav className="bg-white border-t flex justify-around fixed bottom-0 w-full z-20 overflow-x-auto py-1">
-                {visibleTabs.map(t => (
-                    <button key={t.id} onClick={() => handleTabChange(t.id as Tab)} className={`flex flex-col items-center px-2 py-2 min-w-[48px] rounded-xl transition-all relative ${activeTab === t.id ? 'text-sky-600 bg-sky-50' : 'text-slate-400'}`}>
-                        <div className="w-5 h-5">{t.icon}</div>
-                        <span className="text-[9px] font-medium mt-0.5 whitespace-nowrap">{t.label}</span>
-                    </button>
-                ))}
-            </nav>
+            {/* Bottom Nav — solo admin */}
+            {role === 'admin' && visibleTabs.length > 0 && (
+                <nav className="bg-white border-t flex justify-around fixed bottom-0 w-full z-20 overflow-x-auto py-1">
+                    {visibleTabs.map(t => (
+                        <button key={t.id} onClick={() => handleTabChange(t.id as Tab)} className={`flex flex-col items-center px-2 py-2 min-w-[48px] rounded-xl transition-all relative ${activeTab === t.id ? 'text-sky-600 bg-sky-50' : 'text-slate-400'}`}>
+                            <div className="w-5 h-5">{t.icon}</div>
+                            <span className="text-[9px] font-medium mt-0.5 whitespace-nowrap">{t.label}</span>
+                        </button>
+                    ))}
+                </nav>
+            )}
 
             <style>{`
                 @keyframes confetti { from { transform: translateY(-20px) rotate(0deg); opacity: 1; } to { transform: translateY(100vh) rotate(720deg); opacity: 0; } }

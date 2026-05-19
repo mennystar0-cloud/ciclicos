@@ -829,7 +829,7 @@ const FolioTab = ({ onJoin, onCreate, addToast, colors, catalog }: {
 // ─── STOCK TAB ────────────────────────────────────────────────────────────────
 const StockTab = ({ folioId, catalog, colors, onUpdate, addToast }: {
     folioId: string | null; catalog: Catalog; colors: ColorMap;
-    onUpdate: (c: Catalog) => void; addToast: (m: string, t?: ToastType) => void;
+    onUpdate: () => void; addToast: (m: string, t?: ToastType) => void;
 }) => {
     const [rawText, setRawText] = useState('');
     const [preview, setPreview] = useState<any[]>([]);
@@ -878,13 +878,9 @@ const StockTab = ({ folioId, catalog, colors, onUpdate, addToast }: {
         try {
             // 1. Construir mapa teórico local desde el preview
             const theoretical: StockMap = {};
-            const newCatalog = { byBarcode: { ...catalog.byBarcode }, byVariant: { ...catalog.byVariant } };
             for (const item of preview) {
                 if (mode === 'replace') theoretical[item.vkey] = item.qty;
                 else theoretical[item.vkey] = (theoretical[item.vkey] || 0) + item.qty;
-                newCatalog.byVariant[item.vkey] = { mod: item.mod, color: item.color, talla: item.talla, vkey: item.vkey, category: item.cat };
-                const bc = generateBarcode(item.mod, item.color, item.talla, colors);
-                newCatalog.byBarcode[bc] = newCatalog.byVariant[item.vkey];
             }
 
             // 2. Buscar el folio directamente por ID (sin traer todos)
@@ -907,13 +903,10 @@ const StockTab = ({ folioId, catalog, colors, onUpdate, addToast }: {
                 }
             }
 
-            // 4. Guardar folio y catálogo en paralelo
-            await Promise.all([
-                fbUpdateFolio({ ...folio, theoreticalMap: mergedMap }),
-                fbSaveSettings('catalog', newCatalog),
-            ]);
+            // 4. Solo guardar folio en Firebase — el catálogo se reconstruye automáticamente
+            await fbUpdateFolio({ ...folio, theoreticalMap: mergedMap });
 
-            onUpdate(newCatalog);
+            onUpdate();
             addToast(`✓ ${preview.length} variantes cargadas correctamente`, 'success');
             setRawText(''); setPreview([]); setStep(0);
         } catch (err: any) {
@@ -1768,8 +1761,11 @@ const App: React.FC = () => {
     }, [scans.length]);
 
     useEffect(() => {
-        fbLoadSettings('catalog').then(c => { if (c) setCatalog(c); });
-        fbLoadSettings('colors').then(cm => { if (cm) setColors(prev => ({ ...prev, ...cm })); });
+        // Colores en localStorage
+        try {
+            const cm = localStorage.getItem('conteo:colors');
+            if (cm) setColors(prev => ({ ...prev, ...JSON.parse(cm) }));
+        } catch {}
     }, []);
 
     useEffect(() => {
@@ -1778,6 +1774,23 @@ const App: React.FC = () => {
         const unsubScans = fbSubscribeToScans(folioId, data => { setScans(data as Scan[]); });
         return () => { unsubFolio(); unsubScans(); };
     }, [folioId]);
+
+    // Reconstruir catálogo en memoria desde el teórico del folio activo
+    // No se persiste — se regenera automáticamente al cambiar de folio
+    useEffect(() => {
+        if (!folio?.theoreticalMap) { setCatalog({ byBarcode: {}, byVariant: {} }); return; }
+        const byVariant: Catalog['byVariant'] = {};
+        const byBarcode: Catalog['byBarcode'] = {};
+        for (const vkey of Object.keys(folio.theoreticalMap)) {
+            const parts = splitKey(vkey);
+            if (!parts.mod) continue;
+            const item = { mod: parts.mod, color: parts.color || '', talla: parts.talla || '', vkey, category: parts.category };
+            byVariant[vkey] = item;
+            const bc = generateBarcode(parts.mod, parts.color || '', parts.talla || '', colors);
+            byBarcode[bc] = item;
+        }
+        setCatalog({ byBarcode, byVariant });
+    }, [folio?.theoreticalMap, colors]);
 
     const handleLogin = async (r: Role) => {
         setRole(r);
@@ -1794,8 +1807,11 @@ const App: React.FC = () => {
         }
     };
 
-    const handleUpdateColorMap = (m: ColorMap) => { setColors(m); fbSaveSettings('colors', m); };
-    const handleUpdateCatalog = (c: Catalog) => { setCatalog(c); };
+    const handleUpdateColorMap = (m: ColorMap) => {
+        setColors(m);
+        try { localStorage.setItem('conteo:colors', JSON.stringify(m)); } catch {}
+    };
+    const handleUpdateCatalog = () => { /* catalog se reconstruye automáticamente desde folio.theoreticalMap */ };
     const handleTabChange = useCallback((t: Tab) => { setActiveTab(t); window.scrollTo(0, 0); }, []);
 
     if (!role) return <LoginScreen onLogin={handleLogin} />;

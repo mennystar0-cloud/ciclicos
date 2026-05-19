@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import {
     getFirestore, collection, doc, setDoc, getDoc, getDocs,
-    onSnapshot, deleteDoc, query, where, orderBy, writeBatch,
+    onSnapshot, deleteDoc, query, where, writeBatch,
     serverTimestamp, Timestamp
 } from 'firebase/firestore';
 
@@ -89,14 +89,17 @@ export const fbDeleteScan = async (scanId: string, folioId: string, vkey: string
 };
 
 export const fbGetScans = async (folioId: string) => {
-    const q = query(collection(db, 'scans'), where('folioId', '==', folioId), orderBy('ts', 'desc'));
+    const q = query(collection(db, 'scans'), where('folioId', '==', folioId));
     const snap = await getDocs(q);
-    return snap.docs.map(d => d.data());
+    return snap.docs.map(d => d.data()).sort((a: any, b: any) => b.ts - a.ts);
 };
 
 export const fbSubscribeToScans = (folioId: string, callback: (scans: any[]) => void) => {
-    const q = query(collection(db, 'scans'), where('folioId', '==', folioId), orderBy('ts', 'desc'));
-    return onSnapshot(q, snap => callback(snap.docs.map(d => d.data())));
+    const q = query(collection(db, 'scans'), where('folioId', '==', folioId));
+    return onSnapshot(q, snap => {
+        const scans = snap.docs.map(d => d.data()).sort((a: any, b: any) => b.ts - a.ts);
+        callback(scans);
+    });
 };
 
 // ─── SESIONES DE SCANNER (Escaneos Independientes) ────────────────────────────
@@ -124,11 +127,10 @@ export const fbSubscribeToSession = (sessionId: string, callback: (session: any)
 };
 
 export const fbSubscribeToSessionItems = (sessionId: string, callback: (items: any[]) => void) => {
-    const q = query(
-        collection(db, 'scanSessions', sessionId, 'items'),
-        orderBy('ts', 'desc')
-    );
-    return onSnapshot(q, snap => callback(snap.docs.map(d => d.data())));
+    return onSnapshot(collection(db, 'scanSessions', sessionId, 'items'), snap => {
+        const items = snap.docs.map(d => d.data()).sort((a: any, b: any) => b.ts - a.ts);
+        callback(items);
+    });
 };
 
 export const fbGetAllSessions = async () => {
@@ -152,9 +154,8 @@ export const fbDeleteSession = async (sessionId: string) => {
 };
 
 export const fbGetSessionItems = async (sessionId: string) => {
-    const q = query(collection(db, 'scanSessions', sessionId, 'items'), orderBy('ts', 'desc'));
-    const snap = await getDocs(q);
-    return snap.docs.map(d => d.data());
+    const snap = await getDocs(collection(db, 'scanSessions', sessionId, 'items'));
+    return snap.docs.map(d => d.data()).sort((a: any, b: any) => b.ts - a.ts);
 };
 
 // ─── SETTINGS ─────────────────────────────────────────────────────────────────

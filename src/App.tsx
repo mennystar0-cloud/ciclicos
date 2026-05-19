@@ -871,7 +871,16 @@ const StockTab = ({ folioId, catalog, colors, onUpdate, addToast }: {
         const all = await fbGetAllFolios();
         const folio = all.find((f: any) => f.id === folioId) as Folio;
         if (folio) {
-            const mergedMap = mode === 'replace' ? theoretical : { ...(folio.theoreticalMap || {}), ...theoretical };
+            let mergedMap: StockMap;
+            if (mode === 'replace') {
+                mergedMap = theoretical;
+            } else {
+                // CORRECCIÓN: sumar cantidades pieza por pieza, no sobreescribir con spread
+                mergedMap = { ...(folio.theoreticalMap || {}) };
+                for (const [vkey, qty] of Object.entries(theoretical)) {
+                    mergedMap[vkey] = (mergedMap[vkey] || 0) + qty;
+                }
+            }
             await fbUpdateFolio({ ...folio, theoreticalMap: mergedMap });
         }
         await fbSaveSettings('catalog', newCatalog);

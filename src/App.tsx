@@ -186,8 +186,9 @@ const CoverageRing = ({ pct, size = 80 }: { pct: number; size?: number }) => {
 };
 
 // ─── SCANNER SESSION TAB ──────────────────────────────────────────────────────
-const ScannerSessionTab = ({ colors, catalog, addToast }: {
+const ScannerSessionTab = ({ colors, catalog, folio, addToast }: {
     colors: ColorMap; catalog: Catalog;
+    folio: Folio | null;
     addToast: (m: string, t?: ToastType) => void;
 }) => {
     const [phase, setPhase] = useState<'menu' | 'scanning'>('menu');
@@ -296,6 +297,26 @@ const ScannerSessionTab = ({ colors, catalog, addToast }: {
         };
 
         await fbAddSessionScan(currentSession.id, scanItem);
+
+        // Actualizar existenciasMap del folio activo para que el Reporte cuadre
+        if (recognized && folio && folio.state === 'open') {
+            const scan: Scan = {
+                id: scanItem.id,
+                folioId: folio.id,
+                code: clean,
+                vkey: scanItem.vkey,
+                mod: scanItem.mod,
+                color: scanItem.color,
+                talla: scanItem.talla,
+                area: currentSession.area,
+                pos: '0',
+                user: currentSession.operator,
+                ts: scanItem.ts,
+                category: item?.category,
+            };
+            await fbAddScan(scan);
+        }
+
         setFlash(recognized ? 'ok' : 'err');
         if (recognized) {
             setStreak(s => s + 1);
@@ -318,12 +339,16 @@ const ScannerSessionTab = ({ colors, catalog, addToast }: {
             const { getFirestore, doc, deleteDoc } = await import('firebase/firestore');
             const { db } = await import('./firebase.ts');
             await deleteDoc(doc(db, 'scanSessions', currentSession.id, 'items', last.id));
-            // update count
+            // update count en sesión
             const { setDoc, getDoc } = await import('firebase/firestore');
             const ref = doc(db, 'scanSessions', currentSession.id);
             const snap = await getDoc(ref);
             if (snap.exists()) {
                 await setDoc(ref, { ...snap.data(), count: Math.max(0, (snap.data().count || 1) - 1) });
+            }
+            // revertir en existenciasMap del folio
+            if (last.recognized && last.vkey && folio) {
+                await fbDeleteScan(last.id, folio.id, last.vkey);
             }
             setStreak(s => Math.max(0, s - 1));
             addToast('Último escaneo deshecho', 'info');
@@ -1887,7 +1912,7 @@ const App: React.FC = () => {
                 <ErrorBoundary tab={activeTab}>
                     {activeTab === 'folio' && role === 'admin' && <FolioTab onJoin={(id) => { setFolioId(id); setActiveTab('reporte'); }} onCreate={(id) => setFolioId(id)} addToast={addToast} colors={colors} catalog={catalog} />}
                     {activeTab === 'existencias' && role === 'admin' && <StockTab folioId={folioId} catalog={catalog} colors={colors} onUpdate={handleUpdateCatalog} addToast={addToast} />}
-                    {activeTab === 'escanear' && role === 'scanner' && <ScannerSessionTab colors={colors} catalog={catalog} addToast={addToast} />}
+                    {activeTab === 'escanear' && role === 'scanner' && <ScannerSessionTab colors={colors} catalog={catalog} folio={folio} addToast={addToast} />}
                     {activeTab === 'sesiones' && role === 'admin' && <SessionsAdminTab addToast={addToast} />}
                     {activeTab === 'reporte' && role === 'admin' && <ReportTab folio={folio} scans={scans} onTabChange={handleTabChange} addToast={addToast} />}
                     {activeTab === 'consulta' && role === 'admin' && <QueryTab folio={folio} scans={scans} />}

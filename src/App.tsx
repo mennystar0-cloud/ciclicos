@@ -1287,9 +1287,10 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
     folio: Folio | null; scans: Scan[];
     onTabChange: (t: Tab) => void; addToast: (m: string, t?: ToastType) => void;
 }) => {
-    const [filter, setFilter] = useState<'all' | 'faltante' | 'sobrante' | 'ok'>('all');
+    const [filter, setFilter] = useState<'all' | 'faltante' | 'sobrante' | 'ok' | 'parcial'>('all');
     const [expandedKey, setExpandedKey] = useState<string | null>(null);
     const [printMode, setPrintMode] = useState<'completo' | 'simplificado'>('completo');
+    const [vista, setVista] = useState<'reporte' | 'ajustes'>('reporte');
 
     const report = useMemo(() => {
         if (!folio) return { rows: [], totalItems: 0, scannedItems: 0, missingItems: 0, sobranteItems: 0 };
@@ -1301,7 +1302,8 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
             const parts = splitKey(vkey);
             const areaMap: { [a: string]: number } = {};
             scans.filter(s => s.vkey === vkey).forEach(s => { areaMap[s.area] = (areaMap[s.area] || 0) + 1; });
-            const status: 'ok' | 'faltante' | 'sobrante' = diff < 0 ? 'faltante' : diff > 0 ? 'sobrante' : 'ok';
+            // parcial: escaneado al menos 1 pero menos del teórico
+            const status: 'ok' | 'faltante' | 'sobrante' | 'parcial' = diff === 0 ? 'ok' : diff > 0 ? 'sobrante' : fis > 0 ? 'parcial' : 'faltante';
             return { vkey, teo, fis, diff, status, areaMap, ...parts };
         });
         return {
@@ -1319,7 +1321,44 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
         scans.forEach(s => { map[s.area] = (map[s.area] || 0) + 1; });
         return Object.entries(map).map(([area, count]) => ({ area, count })).sort((a, b) => b.count - a.count);
     }, [scans]);
-    const filtered = useMemo(() => report.rows.filter(r => filter === 'all' || r.status === filter), [report.rows, filter]);
+    const filtered = useMemo(() => report.rows.filter(r => {
+        if (filter === 'all') return true;
+        return r.status === filter;
+    }), [report.rows, filter]);
+
+    const ajustesSugeridos = useMemo(() => {
+        if (!folio) return [];
+        const byModel: { [mod: string]: typeof report.rows } = {};
+        report.rows.forEach(r => {
+            if (!byModel[r.mod]) byModel[r.mod] = [];
+            byModel[r.mod].push(r);
+        });
+        const sugerencias: {
+            mod: string; tipo: 'talla' | 'color';
+            sobrante: { vkey: string; color: string; talla: string; exceso: number };
+            faltante: { vkey: string; color: string; talla: string; falta: number };
+            piezas: number;
+        }[] = [];
+        Object.entries(byModel).forEach(([mod, variantes]) => {
+            const sobrantes = variantes.filter(v => v.diff > 0);
+            const faltantes = variantes.filter(v => v.diff < 0);
+            if (sobrantes.length === 0 || faltantes.length === 0) return;
+            sobrantes.forEach(s => {
+                faltantes.forEach(f => {
+                    const piezas = Math.min(s.diff, Math.abs(f.diff));
+                    if (piezas <= 0) return;
+                    if (s.color === f.color && s.talla !== f.talla) {
+                        sugerencias.push({ mod, tipo: 'talla', sobrante: { vkey: s.vkey, color: s.color, talla: s.talla, exceso: s.diff }, faltante: { vkey: f.vkey, color: f.color, talla: f.talla, falta: Math.abs(f.diff) }, piezas });
+                    }
+                    if (s.talla === f.talla && s.color !== f.color) {
+                        sugerencias.push({ mod, tipo: 'color', sobrante: { vkey: s.vkey, color: s.color, talla: s.talla, exceso: s.diff }, faltante: { vkey: f.vkey, color: f.color, talla: f.talla, falta: Math.abs(f.diff) }, piezas });
+                    }
+                });
+            });
+        });
+        return sugerencias.sort((a, b) => a.tipo === b.tipo ? b.piezas - a.piezas : a.tipo === 'talla' ? -1 : 1);
+    }, [report.rows, folio]);
+
     const coveragePct = report.totalItems > 0 ? (report.scannedItems / report.totalItems) * 100 : 0;
 
     const exportCSV = () => {
@@ -1502,15 +1541,32 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
                 </div>
             )}
 
-            {/* Action buttons */}
+            {/* Vista toggle + filtros */}
+            <div className="flex gap-2 no-print">
+                <button onClick={() => setVista('reporte')} className={`flex-1 text-sm py-2 rounded-xl font-semibold border transition-colors ${vista === 'reporte' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200'}`}>
+                    Reporte
+                </button>
+                <button onClick={() => setVista('ajustes')} className={`flex-1 text-sm py-2 rounded-xl font-semibold border transition-colors relative ${vista === 'ajustes' ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-amber-600 border-amber-200'}`}>
+                    Ajustes posibles
+                    {ajustesSugeridos.length > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">{ajustesSugeridos.length}</span>}
+                </button>
+            </div>
+
+            {vista === 'reporte' && (
             <div className="flex gap-2 flex-wrap no-print">
-                {(['all', 'faltante', 'sobrante', 'ok'] as const).map(f => (
-                    <button key={f} onClick={() => setFilter(f)} className={`text-xs px-3 py-1.5 rounded-full border font-medium ${filter === f ? 'bg-slate-800 text-white' : 'bg-white text-slate-600'}`}>
-                        {f === 'all' ? 'Todos' : f.charAt(0).toUpperCase() + f.slice(1)}
-                        {f !== 'all' && <span className="ml-1">({report.rows.filter(r => r.status === f).length})</span>}
+                {([
+                    { key: 'all', label: 'Todos', count: report.rows.length },
+                    { key: 'faltante', label: 'Faltante', count: report.rows.filter(r => r.status === 'faltante').length },
+                    { key: 'parcial', label: 'Parcial', count: report.rows.filter(r => r.status === 'parcial').length },
+                    { key: 'sobrante', label: 'Sobrante', count: report.rows.filter(r => r.status === 'sobrante').length },
+                    { key: 'ok', label: 'OK', count: report.rows.filter(r => r.status === 'ok').length },
+                ] as const).map(({ key, label, count }) => (
+                    <button key={key} onClick={() => setFilter(key as any)} className={`text-xs px-3 py-1.5 rounded-full border font-medium ${filter === key ? 'bg-slate-800 text-white' : 'bg-white text-slate-600'}`}>
+                        {label} <span className="ml-1 opacity-70">({count})</span>
                     </button>
                 ))}
             </div>
+            )}
 
             {/* Print + CSV buttons */}
             <div className="flex gap-2 no-print">
@@ -1525,16 +1581,56 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
                 </button>
             </div>
 
+            {/* Vista Ajustes Posibles */}
+            {vista === 'ajustes' && (
+            <div className="space-y-3 no-print">
+                {ajustesSugeridos.length === 0 ? (
+                    <div className="text-center py-10 text-slate-400 bg-white rounded-xl border">
+                        <p className="font-semibold">Sin ajustes posibles</p>
+                        <p className="text-xs mt-1">No hay sobrantes y faltantes compensables en el mismo modelo</p>
+                    </div>
+                ) : (
+                    <>
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                            <p className="text-xs text-amber-700 font-semibold">Estos son ajustes <span className="font-bold">sugeridos</span> — indican que un sobrante de un modelo podría compensar un faltante del mismo modelo en distinta talla o color. Verifica físicamente antes de aplicar.</p>
+                        </div>
+                        {ajustesSugeridos.map((a, i) => (
+                            <div key={i} className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                                <div className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider ${a.tipo === 'talla' ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700'}`}>
+                                    {a.tipo === 'talla' ? '↕ Ajuste de talla' : '🎨 Ajuste de color'} · {a.mod} · {a.piezas} {a.piezas === 1 ? 'pieza' : 'piezas'}
+                                </div>
+                                <div className="grid grid-cols-2 divide-x">
+                                    <div className="p-3">
+                                        <p className="text-[10px] text-emerald-600 font-bold uppercase mb-1">Sobrante</p>
+                                        <p className="text-sm font-semibold text-slate-700">{a.sobrante.color}</p>
+                                        <p className="text-xs text-slate-500">Talla {a.sobrante.talla}</p>
+                                        <p className="text-lg font-bold text-emerald-600 mt-1">+{a.sobrante.exceso}</p>
+                                    </div>
+                                    <div className="p-3">
+                                        <p className="text-[10px] text-red-500 font-bold uppercase mb-1">Faltante</p>
+                                        <p className="text-sm font-semibold text-slate-700">{a.faltante.color}</p>
+                                        <p className="text-xs text-slate-500">Talla {a.faltante.talla}</p>
+                                        <p className="text-lg font-bold text-red-500 mt-1">-{a.faltante.falta}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </>
+                )}
+            </div>
+            )}
+
             {/* Rows list */}
+            {vista === 'reporte' && (
             <div className="space-y-1 no-print">
                 {filtered.map(r => (
                     <div key={r.vkey} className="bg-white rounded-xl border overflow-hidden shadow-sm">
                         <button onClick={() => setExpandedKey(expandedKey === r.vkey ? null : r.vkey)} className="w-full text-left px-4 py-3 flex items-center gap-2">
                             <div className="flex-1 min-w-0"><p className="text-sm font-semibold text-slate-800 truncate">{r.mod}</p><p className="text-xs text-slate-500">{r.color} · Talla {r.talla}</p></div>
                             <div className="flex items-center gap-2 flex-shrink-0">
-                                <span className="text-sm font-bold text-slate-700">{r.teo}/{r.fis}</span>
+                                <span className="text-sm font-bold text-slate-700"><span className="text-sky-600">{r.fis}</span><span className="text-slate-300">/</span><span className="text-slate-500">{r.teo}</span></span>
                                 <span className={`text-sm font-bold w-8 text-right ${r.diff < 0 ? 'text-red-500' : r.diff > 0 ? 'text-emerald-500' : 'text-slate-400'}`}>{r.diff > 0 ? '+' : ''}{r.diff}</span>
-                                <div className={`w-2.5 h-2.5 rounded-full ${r.status === 'ok' ? 'bg-emerald-400' : r.status === 'faltante' ? 'bg-red-400' : 'bg-amber-400'}`} />
+                                <div className={`w-2.5 h-2.5 rounded-full ${r.status === 'ok' ? 'bg-emerald-400' : r.status === 'faltante' ? 'bg-red-400' : r.status === 'parcial' ? 'bg-orange-400' : 'bg-amber-400'}`} />
                                 {expandedKey === r.vkey ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
                             </div>
                         </button>
@@ -1546,6 +1642,7 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
                     </div>
                 ))}
             </div>
+            )}
         </div>
     );
 };

@@ -875,36 +875,53 @@ const StockTab = ({ folioId, catalog, colors, onUpdate, addToast }: {
     const handleConfirm = async () => {
         if (!folioId) { addToast('Selecciona un inventario primero', 'warning'); return; }
         setLoading(true);
-        const theoretical: StockMap = {};
-        const newCatalog = { byBarcode: { ...catalog.byBarcode }, byVariant: { ...catalog.byVariant } };
-        for (const item of preview) {
-            if (mode === 'replace') theoretical[item.vkey] = item.qty;
-            else theoretical[item.vkey] = (theoretical[item.vkey] || 0) + item.qty;
-            newCatalog.byVariant[item.vkey] = { mod: item.mod, color: item.color, talla: item.talla, vkey: item.vkey, category: item.cat };
-            const bc = generateBarcode(item.mod, item.color, item.talla, colors);
-            newCatalog.byBarcode[bc] = newCatalog.byVariant[item.vkey];
-        }
-        // Get folio from Firebase and update
-        const all = await fbGetAllFolios();
-        const folio = all.find((f: any) => f.id === folioId) as Folio;
-        if (folio) {
+        try {
+            // 1. Construir mapa teórico local desde el preview
+            const theoretical: StockMap = {};
+            const newCatalog = { byBarcode: { ...catalog.byBarcode }, byVariant: { ...catalog.byVariant } };
+            for (const item of preview) {
+                if (mode === 'replace') theoretical[item.vkey] = item.qty;
+                else theoretical[item.vkey] = (theoretical[item.vkey] || 0) + item.qty;
+                newCatalog.byVariant[item.vkey] = { mod: item.mod, color: item.color, talla: item.talla, vkey: item.vkey, category: item.cat };
+                const bc = generateBarcode(item.mod, item.color, item.talla, colors);
+                newCatalog.byBarcode[bc] = newCatalog.byVariant[item.vkey];
+            }
+
+            // 2. Buscar el folio directamente por ID (sin traer todos)
+            const all = await fbGetAllFolios();
+            const folio = (all as Folio[]).find(f => f.id === folioId);
+            if (!folio) {
+                addToast('No se encontró el inventario en Firebase', 'error');
+                setLoading(false);
+                return;
+            }
+
+            // 3. Merge del teórico (sumar pieza a pieza en modo 'add')
             let mergedMap: StockMap;
             if (mode === 'replace') {
                 mergedMap = theoretical;
             } else {
-                // CORRECCIÓN: sumar cantidades pieza por pieza, no sobreescribir con spread
                 mergedMap = { ...(folio.theoreticalMap || {}) };
                 for (const [vkey, qty] of Object.entries(theoretical)) {
                     mergedMap[vkey] = (mergedMap[vkey] || 0) + qty;
                 }
             }
-            await fbUpdateFolio({ ...folio, theoreticalMap: mergedMap });
+
+            // 4. Guardar folio y catálogo en paralelo
+            await Promise.all([
+                fbUpdateFolio({ ...folio, theoreticalMap: mergedMap }),
+                fbSaveSettings('catalog', newCatalog),
+            ]);
+
+            onUpdate(newCatalog);
+            addToast(`✓ ${preview.length} variantes cargadas correctamente`, 'success');
+            setRawText(''); setPreview([]); setStep(0);
+        } catch (err: any) {
+            console.error('Error al cargar teórico:', err);
+            addToast(`Error al guardar: ${err?.message || 'revisa la consola'}`, 'error');
+        } finally {
+            setLoading(false);
         }
-        await fbSaveSettings('catalog', newCatalog);
-        onUpdate(newCatalog);
-        setLoading(false);
-        addToast(`${preview.length} variantes cargadas`, 'success');
-        setRawText(''); setPreview([]); setStep(0);
     };
 
     if (!folioId) return <div className="text-center py-12 text-slate-400"><Boxes className="w-12 h-12 mx-auto mb-2 opacity-30" /><p>Abre un inventario primero</p></div>;

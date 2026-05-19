@@ -1541,44 +1541,57 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
                 </div>
             )}
 
-            {/* Vista toggle + filtros */}
-            <div className="flex gap-2 no-print">
-                <button onClick={() => setVista('reporte')} className={`flex-1 text-sm py-2 rounded-xl font-semibold border transition-colors ${vista === 'reporte' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200'}`}>
-                    Reporte
-                </button>
-                <button onClick={() => setVista('ajustes')} className={`flex-1 text-sm py-2 rounded-xl font-semibold border transition-colors relative ${vista === 'ajustes' ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-amber-600 border-amber-200'}`}>
-                    Ajustes posibles
-                    {ajustesSugeridos.length > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">{ajustesSugeridos.length}</span>}
-                </button>
-            </div>
+            {/* ── Panel de acciones colapsable ── */}
+            <div className="bg-white rounded-xl border shadow-sm overflow-hidden no-print">
 
-            {vista === 'reporte' && (
-            <div className="flex gap-2 flex-wrap no-print">
-                {([
-                    { key: 'all', label: 'Todos', count: report.rows.length },
-                    { key: 'faltante', label: 'Faltante', count: report.rows.filter(r => r.status === 'faltante').length },
-                    { key: 'parcial', label: 'Parcial', count: report.rows.filter(r => r.status === 'parcial').length },
-                    { key: 'sobrante', label: 'Sobrante', count: report.rows.filter(r => r.status === 'sobrante').length },
-                    { key: 'ok', label: 'OK', count: report.rows.filter(r => r.status === 'ok').length },
-                ] as const).map(({ key, label, count }) => (
-                    <button key={key} onClick={() => setFilter(key as any)} className={`text-xs px-3 py-1.5 rounded-full border font-medium ${filter === key ? 'bg-slate-800 text-white' : 'bg-white text-slate-600'}`}>
-                        {label} <span className="ml-1 opacity-70">({count})</span>
+                {/* Fila 1: Vista */}
+                <div className="grid grid-cols-2 divide-x border-b">
+                    <button onClick={() => setVista('reporte')} className={`flex items-center justify-center gap-2 py-3 text-sm font-semibold transition-colors ${vista === 'reporte' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>
+                        <Package size={15} /> Reporte
                     </button>
-                ))}
-            </div>
-            )}
+                    <button onClick={() => setVista('ajustes')} className={`relative flex items-center justify-center gap-2 py-3 text-sm font-semibold transition-colors ${vista === 'ajustes' ? 'bg-amber-500 text-white' : 'text-amber-600 hover:bg-amber-50'}`}>
+                        <AlertTriangle size={15} /> Ajustes posibles
+                        {ajustesSugeridos.length > 0 && (
+                            <span className="absolute top-2 right-3 bg-red-500 text-white text-[9px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
+                                {ajustesSugeridos.length}
+                            </span>
+                        )}
+                    </button>
+                </div>
 
-            {/* Print + CSV buttons */}
-            <div className="flex gap-2 no-print">
-                <button onClick={() => handlePrint('completo')} className="flex-1 flex items-center justify-center gap-2 bg-slate-800 text-white rounded-xl py-3 font-semibold text-sm active:scale-95 transition-transform">
-                    🖨️ Completo
-                </button>
-                <button onClick={() => handlePrint('simplificado')} className="flex-1 flex items-center justify-center gap-2 bg-sky-600 text-white rounded-xl py-3 font-semibold text-sm active:scale-95 transition-transform">
-                    📋 Simplificado
-                </button>
-                <button onClick={exportCSV} className="flex items-center gap-1 border-2 border-slate-200 text-slate-600 rounded-xl px-4 py-3 text-sm font-medium">
-                    <Download size={16} />
-                </button>
+                {/* Fila 2: Filtros — solo en vista reporte */}
+                {vista === 'reporte' && (
+                <div className="border-b">
+                    <div className="flex overflow-x-auto">
+                        {([
+                            { key: 'all',      label: 'Todos',     count: report.rows.length,                                          color: 'text-slate-700' },
+                            { key: 'faltante', label: 'Faltante',  count: report.rows.filter(r => r.status === 'faltante').length,     color: 'text-red-500' },
+                            { key: 'parcial',  label: 'Parcial',   count: report.rows.filter(r => r.status === 'parcial').length,      color: 'text-orange-500' },
+                            { key: 'sobrante', label: 'Sobrante',  count: report.rows.filter(r => r.status === 'sobrante').length,     color: 'text-emerald-600' },
+                            { key: 'ok',       label: 'OK',        count: report.rows.filter(r => r.status === 'ok').length,           color: 'text-slate-400' },
+                        ] as const).map(({ key, label, count, color }) => (
+                            <button key={key} onClick={() => setFilter(key as any)}
+                                className={`flex-shrink-0 flex flex-col items-center px-4 py-2 text-xs font-semibold border-b-2 transition-colors ${filter === key ? 'border-slate-800 text-slate-800' : `border-transparent ${color} hover:bg-slate-50`}`}>
+                                <span className="text-base font-bold">{count}</span>
+                                <span>{label}</span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                )}
+
+                {/* Fila 3: Exportar */}
+                <div className="grid grid-cols-3 divide-x">
+                    <button onClick={() => handlePrint('completo')} className="flex flex-col items-center gap-0.5 py-3 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
+                        <span className="text-base">🖨️</span> Completo
+                    </button>
+                    <button onClick={() => handlePrint('simplificado')} className="flex flex-col items-center gap-0.5 py-3 text-xs font-semibold text-sky-600 hover:bg-sky-50 transition-colors">
+                        <span className="text-base">📋</span> Simplificado
+                    </button>
+                    <button onClick={exportCSV} className="flex flex-col items-center gap-0.5 py-3 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
+                        <Download size={16} /> CSV
+                    </button>
+                </div>
             </div>
 
             {/* Vista Ajustes Posibles */}

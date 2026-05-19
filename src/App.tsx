@@ -841,13 +841,30 @@ const StockTab = ({ folioId, catalog, colors, onUpdate, addToast }: {
         const lines = rawText.trim().split('\n').filter(l => l.trim());
         const parsed: any[] = [];
         for (const line of lines) {
-            const parts = line.trim().split(/\s+/);
-            if (parts.length < 4) continue;
+            const trimmed = line.trim();
+            let modRaw = '';
+            let rest = '';
+
+            // Soporta formato con coma: "041-66,MARINO  250  8"
+            const commaIdx = trimmed.indexOf(',');
+            if (commaIdx !== -1) {
+                modRaw = trimmed.substring(0, commaIdx).trim();
+                rest = trimmed.substring(commaIdx + 1).trim();
+            } else {
+                // Formato clásico con espacios: "04166 MARINO 250 8"
+                const firstSpace = trimmed.search(/\s/);
+                if (firstSpace === -1) continue;
+                modRaw = trimmed.substring(0, firstSpace).trim();
+                rest = trimmed.substring(firstSpace).trim();
+            }
+
+            // "rest" = "COLOR TALLA QTY"
+            const parts = rest.split(/\s+/);
+            if (parts.length < 3) continue;
             const qty = parseInt(parts[parts.length - 1]);
             const tallaRaw = parts[parts.length - 2];
-            const colorRaw = parts.slice(1, parts.length - 2).join(' ');
-            const modRaw = parts[0];
-            if (isNaN(qty)) continue;
+            const colorRaw = parts.slice(0, parts.length - 2).join(' ');
+            if (isNaN(qty) || !modRaw || !colorRaw || !tallaRaw) continue;
             const cat = detectCategoryBySize(tallaRaw);
             const vkey = keyOf(modRaw, colorRaw, tallaRaw, cat);
             parsed.push({ mod: cleanModel(modRaw), color: canonical(colorRaw), talla: tallaRaw, qty, vkey, cat });

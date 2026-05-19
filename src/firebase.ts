@@ -2,7 +2,7 @@ import { initializeApp } from 'firebase/app';
 import {
     getFirestore, collection, doc, setDoc, getDoc, getDocs,
     onSnapshot, deleteDoc, query, where, writeBatch,
-    serverTimestamp, Timestamp
+    updateDoc, increment, serverTimestamp, Timestamp
 } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -56,36 +56,34 @@ export const fbDeleteFolio = async (folioId: string) => {
 
 // ─── SCANS (Inventario Cíclico) ───────────────────────────────────────────────
 export const fbAddScan = async (scan: any) => {
-    await setDoc(doc(db, 'scans', scan.id), { ...scan, createdAt: serverTimestamp() });
-    // update folio existenciasMap & areaCounters
+    const scanRef = doc(db, 'scans', scan.id);
     const folioRef = doc(db, 'folios', scan.folioId);
-    const folioSnap = await getDoc(folioRef);
-    if (folioSnap.exists()) {
-        const folio = folioSnap.data();
-        const existenciasMap = { ...(folio.existenciasMap || {}) };
-        const areaCounters = { ...(folio.areaCounters || {}) };
-        existenciasMap[scan.vkey] = (existenciasMap[scan.vkey] || 0) + 1;
-        const currentCounter = areaCounters[scan.area] || 0;
-        areaCounters[scan.area] = currentCounter + 1;
-        await setDoc(folioRef, { ...folio, existenciasMap, areaCounters, updatedAt: serverTimestamp() });
-        return { ...scan, pos: String(currentCounter + 1) };
-    }
+
+    // Escribir scan y actualizar contadores del folio en paralelo
+    // increment() no requiere leer el documento primero — elimina 1 round-trip
+    await Promise.all([
+        setDoc(scanRef, { ...scan, createdAt: serverTimestamp() }),
+        updateDoc(folioRef, {
+            [`existenciasMap.${scan.vkey}`]: increment(1),
+            [`areaCounters.${scan.area}`]: increment(1),
+            updatedAt: serverTimestamp(),
+        }),
+    ]);
+
     return scan;
 };
 
-export const fbDeleteScan = async (scanId: string, folioId: string, vkey: string, area: string, pos: string) => {
-    await deleteDoc(doc(db, 'scans', scanId));
+export const fbDeleteScan = async (scanId: string, folioId: string, vkey: string, area?: string, pos?: string) => {
     const folioRef = doc(db, 'folios', folioId);
-    const folioSnap = await getDoc(folioRef);
-    if (folioSnap.exists()) {
-        const folio = folioSnap.data();
-        const existenciasMap = { ...(folio.existenciasMap || {}) };
-        const areaCounters = { ...(folio.areaCounters || {}) };
-        if (existenciasMap[vkey] > 0) existenciasMap[vkey]--;
-        const currentMax = areaCounters[area] || 0;
-        if (parseInt(pos) === currentMax) areaCounters[area] = Math.max(0, currentMax - 1);
-        await setDoc(folioRef, { ...folio, existenciasMap, areaCounters, updatedAt: serverTimestamp() });
-    }
+
+    await Promise.all([
+        deleteDoc(doc(db, 'scans', scanId)),
+        updateDoc(folioRef, {
+            [`existenciasMap.${vkey}`]: increment(-1),
+            ...(area ? { [`areaCounters.${area}`]: increment(-1) } : {}),
+            updatedAt: serverTimestamp(),
+        }),
+    ]);
 };
 
 export const fbGetScans = async (folioId: string) => {
@@ -108,15 +106,16 @@ export const fbCreateScanSession = async (session: any) => {
 };
 
 export const fbAddSessionScan = async (sessionId: string, scan: any) => {
-    const sessionRef = doc(db, 'scanSessions', sessionId);
     const scanRef = doc(db, 'scanSessions', sessionId, 'items', scan.id);
-    await setDoc(scanRef, { ...scan, createdAt: serverTimestamp() });
-    // update count in session
-    const snap = await getDoc(sessionRef);
-    if (snap.exists()) {
-        const session = snap.data();
-        await setDoc(sessionRef, { ...session, count: (session.count || 0) + 1, updatedAt: serverTimestamp() });
-    }
+    const sessionRef = doc(db, 'scanSessions', sessionId);
+
+    await Promise.all([
+        setDoc(scanRef, { ...scan, createdAt: serverTimestamp() }),
+        updateDoc(sessionRef, {
+            count: increment(1),
+            updatedAt: serverTimestamp(),
+        }),
+    ]);
 };
 
 export const fbSubscribeToSession = (sessionId: string, callback: (session: any) => void) => {

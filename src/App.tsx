@@ -574,6 +574,7 @@ const SessionsAdminTab = ({ addToast }: { addToast: (m: string, t?: ToastType) =
     const [expanded, setExpanded] = useState<string | null>(null);
     const [items, setItems] = useState<{ [id: string]: SessionItem[] }>({});
     const [loadingItems, setLoadingItems] = useState<string | null>(null);
+    const [syncing, setSyncing] = useState<string | null>(null);
 
     useEffect(() => {
         const unsub = fbSubscribeToAllSessions((s) => setSessions(s as ScanSession[]));
@@ -612,6 +613,54 @@ const SessionsAdminTab = ({ addToast }: { addToast: (m: string, t?: ToastType) =
         if (!confirm('¿Eliminar esta sesión?')) return;
         await fbDeleteSession(sessionId);
         addToast('Sesión eliminada', 'info');
+    };
+
+    const syncSession = async (session: ScanSession) => {
+        setSyncing(session.id);
+        try {
+            // Obtener folio activo
+            const folios = await fbGetAllFolios() as Folio[];
+            const folio = folios.find(f => f.state === 'open');
+            if (!folio) { addToast('No hay inventario abierto para sincronizar', 'warning'); setSyncing(null); return; }
+
+            // Obtener todos los items de la sesión
+            const sessionItems = await fbGetSessionItems(session.id) as SessionItem[];
+            const recognized = sessionItems.filter(i => i.recognized && i.vkey);
+
+            if (recognized.length === 0) { addToast('Sin items reconocidos para sincronizar', 'info'); setSyncing(null); return; }
+
+            // Obtener scans ya registrados en el folio para evitar duplicados
+            const existingScans = await fbGetScans(folio.id) as Scan[];
+            const existingIds = new Set(existingScans.map(s => s.id));
+
+            // Aplicar solo los que no están ya en el folio
+            let applied = 0;
+            for (const item of recognized) {
+                if (existingIds.has(item.id)) continue;
+                const scan: Scan = {
+                    id: item.id,
+                    folioId: folio.id,
+                    code: item.code,
+                    vkey: item.vkey,
+                    mod: item.mod,
+                    color: item.color,
+                    talla: item.talla,
+                    area: session.area,
+                    pos: '0',
+                    user: session.operator,
+                    ts: item.ts,
+                };
+                await fbAddScan(scan);
+                applied++;
+            }
+
+            addToast(`✓ ${applied} escaneos sincronizados al reporte (${recognized.length - applied} ya existían)`, 'success');
+        } catch (err: any) {
+            addToast(`Error al sincronizar: ${err?.message || 'revisa la consola'}`, 'error');
+            console.error(err);
+        } finally {
+            setSyncing(null);
+        }
     };
 
     return (
@@ -658,6 +707,13 @@ const SessionsAdminTab = ({ addToast }: { addToast: (m: string, t?: ToastType) =
                         </button>
                         <button onClick={() => exportSession(session)} className="flex items-center gap-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-lg font-semibold">
                             <Download size={12} /> CSV
+                        </button>
+                        <button
+                            onClick={() => syncSession(session)}
+                            disabled={syncing === session.id}
+                            className="flex items-center gap-1 text-xs bg-sky-50 text-sky-700 border border-sky-200 px-3 py-1.5 rounded-lg font-semibold disabled:opacity-50"
+                        >
+                            {syncing === session.id ? '...' : <><RefreshCw size={12} /> Sincronizar</>}
                         </button>
                         <button onClick={() => deleteSession(session.id)} className="text-red-400 px-2 py-1.5 ml-auto"><Trash2 size={14} /></button>
                     </div>

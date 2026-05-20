@@ -1936,6 +1936,95 @@ const LoginScreen = ({ onLogin }: { onLogin: (r: Role) => void }) => {
     );
 };
 
+
+// ─── SETTINGS PANEL (v4: modo oscuro + fuente) ───────────────────────────────
+type FontSize = 'sm' | 'md' | 'lg' | 'xl';
+
+const applyTheme = (dark: boolean, font: FontSize) => {
+    if (dark) document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
+    document.documentElement.setAttribute('data-font', font);
+};
+
+const loadUIPrefs = (): { dark: boolean; font: FontSize } => {
+    try {
+        const raw = localStorage.getItem('conteo:ui');
+        if (raw) return JSON.parse(raw);
+    } catch {}
+    return { dark: false, font: 'md' };
+};
+
+const saveUIPrefs = (dark: boolean, font: FontSize) => {
+    localStorage.setItem('conteo:ui', JSON.stringify({ dark, font }));
+    applyTheme(dark, font);
+};
+
+const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
+    const prefs = loadUIPrefs();
+    const [dark, setDark] = React.useState(prefs.dark);
+    const [font, setFont] = React.useState<FontSize>(prefs.font);
+
+    const handleDark = (v: boolean) => { setDark(v); saveUIPrefs(v, font); };
+    const handleFont = (v: FontSize) => { setFont(v); saveUIPrefs(dark, v); };
+
+    return (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-end" onClick={onClose}>
+            <div
+                className="w-full bg-white dark:bg-slate-900 rounded-t-3xl p-6 space-y-6"
+                onClick={e => e.stopPropagation()}
+            >
+                <div className="flex justify-center -mt-2 mb-2">
+                    <div className="w-10 h-1 rounded-full bg-slate-300 dark:bg-slate-600" />
+                </div>
+                <div className="flex items-center justify-between">
+                    <h2 className="text-lg font-bold text-slate-800 dark:text-white">Apariencia</h2>
+                    <button onClick={onClose} className="text-slate-400 text-2xl leading-none">×</button>
+                </div>
+                <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800 rounded-2xl p-4">
+                    <div className="flex items-center gap-3">
+                        <span className="text-2xl">{dark ? '🌙' : '☀️'}</span>
+                        <div>
+                            <p className="font-semibold text-slate-800 dark:text-white text-sm">Modo Oscuro</p>
+                            <p className="text-xs text-slate-400">Ideal para bodegas con poca luz</p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => handleDark(!dark)}
+                        className={`relative w-12 h-6 rounded-full transition-colors ${dark ? 'bg-sky-500' : 'bg-slate-300'}`}
+                    >
+                        <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${dark ? 'left-6' : 'left-0.5'}`} />
+                    </button>
+                </div>
+                <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-4 space-y-3">
+                    <p className="font-semibold text-slate-800 dark:text-white text-sm">Tamaño de fuente</p>
+                    <div className="grid grid-cols-4 gap-2">
+                        {([
+                            { v: 'sm' as FontSize, label: 'Pequeño', size: 'text-xs' },
+                            { v: 'md' as FontSize, label: 'Normal',  size: 'text-sm' },
+                            { v: 'lg' as FontSize, label: 'Grande',  size: 'text-base' },
+                            { v: 'xl' as FontSize, label: 'Extra',   size: 'text-lg' },
+                        ]).map(opt => (
+                            <button
+                                key={opt.v}
+                                onClick={() => handleFont(opt.v)}
+                                className={`rounded-xl py-3 flex flex-col items-center gap-1 transition-all ${
+                                    font === opt.v
+                                        ? 'bg-sky-500 text-white'
+                                        : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border dark:border-slate-600'
+                                }`}
+                            >
+                                <span className={`font-bold ${opt.size}`}>Aa</span>
+                                <span className="text-[10px] opacity-80">{opt.label}</span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                <div className="h-4" />
+            </div>
+        </div>
+    );
+};
+
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 const App: React.FC = () => {
     const [role, setRole] = useState<Role | null>(null);
@@ -1947,6 +2036,7 @@ const App: React.FC = () => {
     const [colors, setColors] = useState<ColorMap>(DEFAULT_COLORS);
     const [toasts, setToasts] = useState<Toast[]>([]);
     const [confetti, setConfetti] = useState(false);
+    const [showSettings, setShowSettings] = useState(false);
     const [startTime] = useState(Date.now());
     const [elapsed, setElapsed] = useState(0);
 
@@ -1955,6 +2045,12 @@ const App: React.FC = () => {
         const interval = setInterval(() => setElapsed(Math.floor((Date.now() - startTime) / 1000)), 1000);
         return () => clearInterval(interval);
     }, [role, startTime]);
+
+    // v4: cargar tema al iniciar
+    useEffect(() => {
+        const p = loadUIPrefs();
+        applyTheme(p.dark, p.font);
+    }, []);
 
     const formatElapsed = () => {
         const h = Math.floor(elapsed / 3600), m = Math.floor((elapsed % 3600) / 60), s = elapsed % 60;
@@ -2049,12 +2145,12 @@ const App: React.FC = () => {
     const visibleTabs = role === 'scanner' ? [] : tabs.filter(t => t.roles.includes(role!));
 
     return (
-        <div className="flex flex-col h-screen bg-slate-50">
+        <div className="flex flex-col h-screen bg-slate-50 dark:bg-slate-950 dark:text-white">
             <ToastContainer toasts={toasts} onRemove={id => setToasts(prev => prev.filter(t => t.id !== id))} />
             <Confetti active={confetti} />
 
             {/* Header */}
-            <header className="bg-white border-b px-4 py-3 flex justify-between items-center shadow-sm z-10 flex-shrink-0">
+            <header className="bg-white dark:bg-slate-900 dark:border-slate-700 border-b px-4 py-3 flex justify-between items-center shadow-sm z-10 flex-shrink-0">
                 <div className="flex items-center gap-2 overflow-hidden">
                     {folio ? (
                         <div className="flex flex-col">
@@ -2069,6 +2165,7 @@ const App: React.FC = () => {
                     </div>
                     {role === 'admin' && <div className="flex items-center gap-1 text-xs text-slate-400"><Timer size={12} />{formatElapsed()}</div>}
                     <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${role === 'admin' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}`}>{role}</span>
+                    <button onClick={() => setShowSettings(true)} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Apariencia">⚙️</button>
                     <button onClick={() => { setRole(null); setFolioId(null); setFolio(null); setScans([]); }} className="p-1.5 text-red-400 hover:text-red-600 rounded-lg hover:bg-red-50"><LogOut size={18} /></button>
                 </div>
             </header>
@@ -2091,9 +2188,9 @@ const App: React.FC = () => {
 
             {/* Bottom Nav — solo admin */}
             {role === 'admin' && visibleTabs.length > 0 && (
-                <nav className="bg-white border-t flex justify-around fixed bottom-0 w-full z-20 overflow-x-auto py-1">
+                <nav className="bg-white dark:bg-slate-900 dark:border-slate-700 border-t flex justify-around fixed bottom-0 w-full z-20 overflow-x-auto py-1">
                     {visibleTabs.map(t => (
-                        <button key={t.id} onClick={() => handleTabChange(t.id as Tab)} className={`flex flex-col items-center px-2 py-2 min-w-[48px] rounded-xl transition-all relative ${activeTab === t.id ? 'text-sky-600 bg-sky-50' : 'text-slate-400'}`}>
+                        <button key={t.id} onClick={() => handleTabChange(t.id as Tab)} className={`flex flex-col items-center px-2 py-2 min-w-[48px] rounded-xl transition-all relative ${activeTab === t.id ? 'text-sky-600 bg-sky-50 dark:bg-sky-900/30' : 'text-slate-400 dark:text-slate-500'}`}>
                             <div className="w-5 h-5">{t.icon}</div>
                             <span className="text-[9px] font-medium mt-0.5 whitespace-nowrap">{t.label}</span>
                         </button>
@@ -2104,6 +2201,7 @@ const App: React.FC = () => {
             <style>{`
                 @keyframes confetti { from { transform: translateY(-20px) rotate(0deg); opacity: 1; } to { transform: translateY(100vh) rotate(720deg); opacity: 0; } }
             `}</style>
+            {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
         </div>
     );
 };

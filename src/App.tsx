@@ -594,12 +594,12 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
                 </div>
             </div>
 
+            {showConflict && <ConflictModal />}
             {/* Input */}
             <div className="bg-white rounded-xl p-4 shadow-sm border space-y-3">
                 <div className="flex gap-2">
                     <input
                         ref={inputRef}
-            {showConflict && <ConflictModal />}
                         type="text"
                         inputMode="numeric"
                         className="flex-1 border-2 border-sky-300 rounded-xl p-3 text-lg font-mono focus:outline-none focus:border-sky-500"

@@ -444,10 +444,35 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
     // ── MENU PHASE ──
     if (phase === 'menu') return (
         <div className="space-y-6">
+            {/* Sin inventario abierto */}
+            {!folio || folio.state !== 'open' ? (
+                <div className="flex flex-col items-center justify-center py-16 space-y-4 text-center">
+                    <div className="w-20 h-20 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                        <span className="text-4xl">📋</span>
+                    </div>
+                    <div>
+                        <h3 className="font-black text-slate-800 dark:text-white text-lg">Sin inventario activo</h3>
+                        <p className="text-slate-500 dark:text-slate-400 text-sm mt-1 max-w-xs">
+                            No hay ningun inventario abierto en esta sucursal. Pide al administrador que cree uno.
+                        </p>
+                    </div>
+                    <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-2xl p-4 text-sm text-amber-700 dark:text-amber-300 max-w-xs">
+                        <p className="font-bold mb-1">¿Que hacer?</p>
+                        <p>El administrador debe ir a <strong>Inventarios → Nuevo</strong> y crear un folio para poder escanear.</p>
+                    </div>
+                    <button
+                        onClick={() => window.location.reload()}
+                        className="flex items-center gap-2 bg-sky-500 hover:bg-sky-400 text-white px-6 py-3 rounded-xl font-bold active:scale-95"
+                    >
+                        <RefreshCw size={16} /> Verificar de nuevo
+                    </button>
+                </div>
+            ) : (
+            <>
             <div className="bg-gradient-to-br from-sky-500 to-sky-700 rounded-2xl p-6 text-white text-center">
                 <QrCode size={40} className="mx-auto mb-2 opacity-90" />
                 <h2 className="text-xl font-bold">Nuevo Escaneo</h2>
-                <p className="text-sky-200 text-sm mt-1">Escaneo independiente — se sincroniza en tiempo real con el Admin</p>
+                <p className="text-sky-200 text-sm mt-1">{folio.name}</p>
             </div>
 
             <div className="bg-white rounded-xl border p-5 shadow-sm space-y-4">
@@ -486,6 +511,8 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
                     <PlayCircle size={22} /> {loading ? 'Iniciando...' : 'Iniciar Escaneo'}
                 </button>
             </div>
+            </>
+            )}
         </div>
     );
 

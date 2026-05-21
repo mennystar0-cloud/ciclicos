@@ -1892,93 +1892,161 @@ const InfoTab = () => (
     </div>
 );
 
-// ─── LOGIN SCREEN ─────────────────────────────────────────────────────────────
-const LoginScreen = ({ onLogin }: { onLogin: (r: Role) => void }) => {
-    const [pass, setPass] = useState('');
-    const [loading, setLoading] = useState(false);
 
-    const ADMIN_HASH = '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918';
+// ─── UTILIDADES TEMA (v4) ─────────────────────────────────────────────────────
+type FontSize = 'sm' | 'md' | 'lg' | 'xl';
+const applyTheme = (dark: boolean, font: FontSize) => {
+    dark ? document.documentElement.classList.add('dark') : document.documentElement.classList.remove('dark');
+    document.documentElement.setAttribute('data-font', font);
+};
+const loadUIPrefs = (): { dark: boolean; font: FontSize } => {
+    try { const r = localStorage.getItem('conteo:ui'); if (r) return JSON.parse(r); } catch {}
+    return { dark: false, font: 'md' };
+};
+const saveUIPrefs = (dark: boolean, font: FontSize) => {
+    localStorage.setItem('conteo:ui', JSON.stringify({ dark, font }));
+    applyTheme(dark, font);
+};
 
-    const handleAdmin = async () => {
-        setLoading(true);
-        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pass));
-        const hash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-        setLoading(false);
-        if (hash === ADMIN_HASH) onLogin('admin');
-        else alert('Contraseña incorrecta');
+// ─── OPERADORES (v4) ──────────────────────────────────────────────────────────
+interface Operator { id: string; name: string; pin: string; role: 'scanner'|'supervisor'; active: boolean; createdAt: number; lastLoginAt?: number; }
+interface ScannerSession { operatorId: string; operatorName: string; loginAt: number; timeoutMs: number; }
+const OPS_KEY = 'conteo:operators';
+const SES_KEY = 'conteo:session';
+const hashPin = async (pin: string) => { const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pin)); return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join(''); };
+const loadOps = (): Operator[] => { try { return JSON.parse(localStorage.getItem(OPS_KEY) || '[]'); } catch { return []; } };
+const saveOps = (ops: Operator[]) => localStorage.setItem(OPS_KEY, JSON.stringify(ops));
+const saveSession = (s: ScannerSession) => sessionStorage.setItem(SES_KEY, JSON.stringify(s));
+const loadSession = (): ScannerSession | null => { try { const r = sessionStorage.getItem(SES_KEY); if (!r) return null; const s = JSON.parse(r) as ScannerSession; if (Date.now() - s.loginAt > s.timeoutMs) { sessionStorage.removeItem(SES_KEY); return null; } return s; } catch { return null; } };
+const clearSession = () => sessionStorage.removeItem(SES_KEY);
+
+// ─── PANEL OPERADORES ─────────────────────────────────────────────────────────
+const OperatorsPanel = ({ onClose, addToast }: { onClose: () => void; addToast: (m: string, t?: ToastType) => void }) => {
+    const [ops, setOps] = React.useState<Operator[]>(loadOps());
+    const [showForm, setShowForm] = React.useState(false);
+    const [editOp, setEditOp] = React.useState<Operator | null>(null);
+    const [name, setName] = React.useState('');
+    const [pin, setPin] = React.useState('');
+    const [opRole, setOpRole] = React.useState<'scanner'|'supervisor'>('scanner');
+    const reload = () => setOps(loadOps());
+    const openNew = () => { setEditOp(null); setName(''); setPin(''); setOpRole('scanner'); setShowForm(true); };
+    const openEdit = (op: Operator) => { setEditOp(op); setName(op.name); setPin(''); setOpRole(op.role); setShowForm(true); };
+    const handleSave = async () => {
+        if (!name.trim()) { addToast('Nombre requerido', 'warning'); return; }
+        if (!editOp && pin.length < 4) { addToast('PIN minimo 4 digitos', 'warning'); return; }
+        const list = loadOps();
+        const hashed = pin ? await hashPin(pin) : (editOp?.pin ?? '');
+        if (editOp) { const i = list.findIndex(o => o.id === editOp.id); if (i !== -1) list[i] = { ...list[i], name: name.trim(), pin: hashed, role: opRole }; }
+        else list.push({ id: crypto.randomUUID(), name: name.trim(), pin: hashed, role: opRole, active: true, createdAt: Date.now() });
+        saveOps(list); reload(); setShowForm(false);
+        addToast((editOp ? 'Actualizado: ' : 'Creado: ') + name.trim(), 'success');
     };
-
+    const handleToggle = (op: Operator) => { saveOps(loadOps().map(o => o.id === op.id ? { ...o, active: !o.active } : o)); reload(); addToast(op.name + (op.active ? ' desactivado' : ' activado'), 'info'); };
+    const handleDelete = (op: Operator) => { if (!confirm('Eliminar a ' + op.name + '?')) return; saveOps(loadOps().filter(o => o.id !== op.id)); reload(); addToast(op.name + ' eliminado', 'warning'); };
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800 p-6">
-            <div className="w-full max-w-sm space-y-6">
-                <div className="text-center text-white">
-                    <div className="w-20 h-20 bg-sky-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-2xl"><QrCode size={40} className="text-white" /></div>
-                    <h1 className="text-2xl font-bold">Conteo Cíclico Pro</h1>
-                    <p className="text-slate-400 text-sm">v3.1 · Firebase Sync</p>
-                </div>
-                <div className="bg-sky-500 rounded-2xl p-6 text-center shadow-xl">
-                    <QrCode size={36} className="mx-auto text-white mb-3 opacity-90" />
-                    <p className="text-white text-sm font-medium mb-4">Acceso rápido para scanners</p>
-                    <button onClick={() => onLogin('scanner')} className="w-full bg-white text-sky-600 font-bold py-3 rounded-xl text-lg shadow-md active:scale-95 transition-transform">
-                        Iniciar Escaneo
-                    </button>
-                    <p className="text-sky-200 text-[10px] mt-2">Sincronización en tiempo real con el admin</p>
-                </div>
-                <div className="relative flex items-center"><div className="flex-grow border-t border-slate-600"></div><span className="mx-4 text-slate-400 text-xs">ADMINISTRADOR</span><div className="flex-grow border-t border-slate-600"></div></div>
-                <div className="bg-white bg-opacity-10 rounded-2xl p-5 space-y-3">
-                    <input type="password" placeholder="Contraseña de administrador" className="w-full bg-white bg-opacity-20 border border-white border-opacity-30 rounded-xl p-3 text-white placeholder-slate-400 focus:outline-none focus:border-sky-400" value={pass} onChange={e => setPass(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAdmin()} />
-                    <button onClick={handleAdmin} disabled={loading} className="w-full bg-white text-slate-800 font-bold py-3 rounded-xl shadow-md active:scale-95 transition-transform disabled:opacity-50">
-                        {loading ? 'Verificando...' : 'Ingresar como Admin'}
-                    </button>
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-end" onClick={onClose}>
+            <div className="w-full max-h-[90vh] bg-white dark:bg-slate-900 rounded-t-3xl overflow-y-auto" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-center pt-3"><div className="w-10 h-1 rounded-full bg-slate-300 dark:bg-slate-600" /></div>
+                <div className="p-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                        <h2 className="text-lg font-bold text-slate-800 dark:text-white">Operadores</h2>
+                        <div className="flex gap-2">
+                            <button onClick={openNew} className="bg-sky-500 text-white px-3 py-1.5 rounded-xl text-sm font-bold">+ Nuevo</button>
+                            <button onClick={onClose} className="text-slate-400 text-2xl px-2">x</button>
+                        </div>
+                    </div>
+                    {showForm && (
+                        <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-4 space-y-3 border dark:border-slate-700">
+                            <p className="font-bold text-sm text-slate-700 dark:text-white">{editOp ? 'Editar' : 'Nuevo'} operador</p>
+                            <input className="w-full border dark:border-slate-600 rounded-xl px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-white" placeholder="Nombre" value={name} onChange={e => setName(e.target.value)} maxLength={40} />
+                            <input className="w-full border dark:border-slate-600 rounded-xl px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-white tracking-widest" type="password" inputMode="numeric" placeholder={editOp ? 'PIN nuevo (vacio = no cambiar)' : 'PIN 4-8 digitos'} value={pin} onChange={e => setPin(e.target.value.replace(/[^0-9]/g,'').slice(0,8))} />
+                            <select className="w-full border dark:border-slate-600 rounded-xl px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-white" value={opRole} onChange={e => setOpRole(e.target.value as any)}>
+                                <option value="scanner">Escaner</option>
+                                <option value="supervisor">Supervisor (acceso admin)</option>
+                            </select>
+                            <div className="flex gap-2">
+                                <button onClick={handleSave} className="flex-1 bg-sky-500 text-white rounded-xl py-2 text-sm font-bold">Guardar</button>
+                                <button onClick={() => setShowForm(false)} className="flex-1 bg-slate-200 dark:bg-slate-700 dark:text-white rounded-xl py-2 text-sm">Cancelar</button>
+                            </div>
+                        </div>
+                    )}
+                    <div className="space-y-2">
+                        {ops.length === 0 && <p className="text-center text-slate-400 py-8 text-sm">Sin operadores. Crea el primero.</p>}
+                        {ops.map(op => (
+                            <div key={op.id} className={`bg-white dark:bg-slate-800 rounded-2xl p-4 border dark:border-slate-700 flex items-center gap-3${!op.active ? ' opacity-50' : ''}`}>
+                                <div className="w-10 h-10 rounded-full bg-sky-100 dark:bg-sky-900 flex items-center justify-center flex-shrink-0">
+                                    <span className="text-sky-700 dark:text-sky-300 font-bold text-sm">{op.name.slice(0,2).toUpperCase()}</span>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="font-bold text-slate-800 dark:text-white text-sm truncate">{op.name}</p>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${op.role === 'scanner' ? 'bg-sky-100 text-sky-700' : 'bg-purple-100 text-purple-700'}`}>{op.role === 'scanner' ? 'Escaner' : 'Supervisor'}</span>
+                                        {op.lastLoginAt && <span className="text-[10px] text-slate-400">Ultimo: {new Date(op.lastLoginAt).toLocaleDateString('es-MX')}</span>}
+                                        {!op.active && <span className="text-[10px] text-red-400">Inactivo</span>}
+                                    </div>
+                                </div>
+                                <div className="flex gap-1 flex-shrink-0">
+                                    <button onClick={() => openEdit(op)} className="p-2 text-slate-400 hover:text-sky-600 rounded-lg" title="Editar">✏️</button>
+                                    <button onClick={() => handleToggle(op)} className="p-2 text-slate-400 hover:text-amber-600 rounded-lg" title={op.active ? 'Desactivar' : 'Activar'}>{op.active ? '🚫' : '✅'}</button>
+                                    <button onClick={() => handleDelete(op)} className="p-2 text-slate-400 hover:text-red-600 rounded-lg" title="Eliminar">🗑️</button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3 text-xs text-amber-700 dark:text-amber-400">
+                        🔐 PINs cifrados con SHA-256. Sesion escaner: 8h · Supervisor: 2h · Admin: sin limite.
+                    </div>
+                    <div className="h-4" />
                 </div>
             </div>
         </div>
     );
 };
 
-
-// ─── SETTINGS PANEL (v4: modo oscuro + fuente) ───────────────────────────────
-type FontSize = 'sm' | 'md' | 'lg' | 'xl';
-
-const applyTheme = (dark: boolean, font: FontSize) => {
-    if (dark) document.documentElement.classList.add('dark');
-    else document.documentElement.classList.remove('dark');
-    document.documentElement.setAttribute('data-font', font);
+// ─── TECLADO PIN ──────────────────────────────────────────────────────────────
+const PinKeyboard = ({ onSubmit, loading, error }: { onSubmit: (pin: string) => void; loading: boolean; error: string }) => {
+    const [pin, setPin] = React.useState('');
+    const tap = (d: string) => { if (d === 'DEL') { setPin(p => p.slice(0,-1)); return; } if (pin.length >= 8) return; setPin(p => p+d); };
+    return (
+        <div className="space-y-4">
+            <div className="flex justify-center gap-3">
+                {Array.from({ length: Math.max(4, pin.length) }).map((_,i) => (
+                    <div key={i} className={`w-10 h-10 rounded-xl border-2 flex items-center justify-center transition-all ${i < pin.length ? 'bg-sky-500 border-sky-500' : 'bg-white/10 border-white/30'}`}>
+                        {i < pin.length && <div className="w-3 h-3 rounded-full bg-white" />}
+                    </div>
+                ))}
+            </div>
+            {error && <p className="text-center text-red-400 text-sm">{error}</p>}
+            <div className="grid grid-cols-3 gap-2">
+                {['1','2','3','4','5','6','7','8','9','','0','DEL'].map((d,i) => (
+                    <button key={i} onClick={() => d && tap(d)} disabled={!d}
+                        className={`h-14 rounded-xl font-bold text-xl transition-all active:scale-95 ${d==='DEL' ? 'bg-red-500/20 text-red-300 text-sm' : d ? 'bg-white/15 text-white hover:bg-white/25' : 'opacity-0 pointer-events-none'}`}>
+                        {d === 'DEL' ? '⌫' : d}
+                    </button>
+                ))}
+            </div>
+            <button onClick={() => onSubmit(pin)} disabled={pin.length < 4 || loading}
+                className="w-full bg-sky-500 hover:bg-sky-400 disabled:opacity-40 text-white py-3 rounded-xl font-bold text-lg active:scale-95">
+                {loading ? 'Verificando...' : 'Entrar'}
+            </button>
+        </div>
+    );
 };
 
-const loadUIPrefs = (): { dark: boolean; font: FontSize } => {
-    try {
-        const raw = localStorage.getItem('conteo:ui');
-        if (raw) return JSON.parse(raw);
-    } catch {}
-    return { dark: false, font: 'md' };
-};
-
-const saveUIPrefs = (dark: boolean, font: FontSize) => {
-    localStorage.setItem('conteo:ui', JSON.stringify({ dark, font }));
-    applyTheme(dark, font);
-};
-
+// ─── PANEL CONFIGURACION ──────────────────────────────────────────────────────
 const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
     const prefs = loadUIPrefs();
     const [dark, setDark] = React.useState(prefs.dark);
     const [font, setFont] = React.useState<FontSize>(prefs.font);
-
     const handleDark = (v: boolean) => { setDark(v); saveUIPrefs(v, font); };
     const handleFont = (v: FontSize) => { setFont(v); saveUIPrefs(dark, v); };
-
     return (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-end" onClick={onClose}>
-            <div
-                className="w-full bg-white dark:bg-slate-900 rounded-t-3xl p-6 space-y-6"
-                onClick={e => e.stopPropagation()}
-            >
-                <div className="flex justify-center -mt-2 mb-2">
-                    <div className="w-10 h-1 rounded-full bg-slate-300 dark:bg-slate-600" />
-                </div>
+            <div className="w-full bg-white dark:bg-slate-900 rounded-t-3xl p-6 space-y-5" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-center -mt-2 mb-1"><div className="w-10 h-1 rounded-full bg-slate-300 dark:bg-slate-600" /></div>
                 <div className="flex items-center justify-between">
                     <h2 className="text-lg font-bold text-slate-800 dark:text-white">Apariencia</h2>
-                    <button onClick={onClose} className="text-slate-400 text-2xl leading-none">×</button>
+                    <button onClick={onClose} className="text-slate-400 text-2xl leading-none">x</button>
                 </div>
                 <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800 rounded-2xl p-4">
                     <div className="flex items-center gap-3">
@@ -1988,73 +2056,183 @@ const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
                             <p className="text-xs text-slate-400">Ideal para bodegas con poca luz</p>
                         </div>
                     </div>
-                    <button
-                        onClick={() => handleDark(!dark)}
-                        className={`relative w-12 h-6 rounded-full transition-colors ${dark ? 'bg-sky-500' : 'bg-slate-300'}`}
-                    >
+                    <button onClick={() => handleDark(!dark)} className={`relative w-12 h-6 rounded-full transition-colors ${dark ? 'bg-sky-500' : 'bg-slate-300'}`}>
                         <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${dark ? 'left-6' : 'left-0.5'}`} />
                     </button>
                 </div>
                 <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl p-4 space-y-3">
-                    <p className="font-semibold text-slate-800 dark:text-white text-sm">Tamaño de fuente</p>
+                    <p className="font-semibold text-slate-800 dark:text-white text-sm">Tamano de fuente</p>
                     <div className="grid grid-cols-4 gap-2">
-                        {([
-                            { v: 'sm' as FontSize, label: 'Pequeño', size: 'text-xs' },
-                            { v: 'md' as FontSize, label: 'Normal',  size: 'text-sm' },
-                            { v: 'lg' as FontSize, label: 'Grande',  size: 'text-base' },
-                            { v: 'xl' as FontSize, label: 'Extra',   size: 'text-lg' },
-                        ]).map(opt => (
-                            <button
-                                key={opt.v}
-                                onClick={() => handleFont(opt.v)}
-                                className={`rounded-xl py-3 flex flex-col items-center gap-1 transition-all ${
-                                    font === opt.v
-                                        ? 'bg-sky-500 text-white'
-                                        : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border dark:border-slate-600'
-                                }`}
-                            >
-                                <span className={`font-bold ${opt.size}`}>Aa</span>
-                                <span className="text-[10px] opacity-80">{opt.label}</span>
-                            </button>
-                        ))}
+                        {(['sm','md','lg','xl'] as FontSize[]).map((v,i) => {
+                            const labels = ['Pequeno','Normal','Grande','Extra'];
+                            const sizes  = ['text-xs','text-sm','text-base','text-lg'];
+                            return (
+                                <button key={v} onClick={() => handleFont(v)} className={`rounded-xl py-3 flex flex-col items-center gap-1 transition-all ${font===v ? 'bg-sky-500 text-white' : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border dark:border-slate-600'}`}>
+                                    <span className={`font-bold ${sizes[i]}`}>Aa</span>
+                                    <span className="text-[10px] opacity-80">{labels[i]}</span>
+                                </button>
+                            );
+                        })}
                     </div>
                 </div>
-                <div className="h-4" />
+                <div className="h-2" />
             </div>
         </div>
     );
 };
 
-// ─── MAIN APP ─────────────────────────────────────────────────────────────────
+// ─── BANNER OFFLINE ───────────────────────────────────────────────────────────
+const OfflineBanner = () => {
+    const [online, setOnline] = React.useState(navigator.onLine);
+    React.useEffect(() => {
+        const on  = () => setOnline(true);
+        const off = () => setOnline(false);
+        window.addEventListener('online', on);
+        window.addEventListener('offline', off);
+        return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
+    }, []);
+    if (online) return null;
+    return (
+        <div className="bg-amber-500 text-white px-4 py-2 flex items-center gap-2 text-xs font-medium z-30">
+            <span className="text-base">📵</span>
+            Sin conexion a internet — los datos se sincronizaran al reconectarse
+        </div>
+    );
+};
+
+// ─── LOGIN SCREEN v4 ──────────────────────────────────────────────────────────
+const LoginScreen = ({ onLogin }: { onLogin: (r: Role, opName?: string) => void }) => {
+    const [mode, setMode]       = React.useState<'main'|'pin'|'admin'>('main');
+    const [pass, setPass]       = React.useState('');
+    const [loading, setLoading] = React.useState(false);
+    const [error, setError]     = React.useState('');
+    const hasOps = loadOps().filter(o => o.active).length > 0;
+    const ADMIN_HASH = '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918';
+
+    const handleAdmin = async () => {
+        setLoading(true); setError('');
+        const buf  = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pass));
+        const hash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+        setLoading(false);
+        if (hash === ADMIN_HASH) onLogin('admin');
+        else setError('Contrasena incorrecta');
+    };
+
+    const handlePin = async (pin: string) => {
+        setLoading(true); setError('');
+        const hashed = await hashPin(pin);
+        const ops = loadOps();
+        const op  = ops.find(o => o.pin === hashed && o.active);
+        setLoading(false);
+        if (!op) { setError('PIN incorrecto o usuario inactivo'); return; }
+        const timeoutMs = op.role === 'scanner' ? 8*60*60*1000 : 2*60*60*1000;
+        saveSession({ operatorId: op.id, operatorName: op.name, loginAt: Date.now(), timeoutMs });
+        saveOps(ops.map(o => o.id === op.id ? { ...o, lastLoginAt: Date.now() } : o));
+        onLogin(op.role === 'supervisor' ? 'admin' : 'scanner', op.name);
+    };
+
+    return (
+        <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-sky-900 p-5">
+            <div className="mb-8 text-center">
+                <div className="text-5xl mb-3">📦</div>
+                <h1 className="text-2xl font-black text-white tracking-tight">Conteo Ciclico Pro</h1>
+                <p className="text-sky-300 text-sm mt-1">v4.0 · Sistema de Inventario</p>
+            </div>
+            <div className="w-full max-w-sm bg-white/10 backdrop-blur-xl rounded-3xl p-6 border border-white/20 shadow-2xl">
+                {mode === 'main' && (
+                    <div className="space-y-3">
+                        <button onClick={() => onLogin('scanner', 'Scanner')}
+                            className="w-full bg-sky-500 hover:bg-sky-400 text-white py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 active:scale-95 shadow-lg">
+                            <span className="text-2xl">📷</span> Iniciar Escaneo Rapido
+                        </button>
+                        <p className="text-center text-xs text-white/40">Sin contrasena · Solo escaneo</p>
+                        {hasOps && (
+                            <button onClick={() => { setMode('pin'); setError(''); }}
+                                className="w-full bg-white/15 hover:bg-white/25 text-white py-3 rounded-2xl font-semibold flex items-center justify-center gap-3 active:scale-95">
+                                🔢 Ingresar con PIN
+                            </button>
+                        )}
+                        <button onClick={() => { setMode('admin'); setError(''); }}
+                            className="w-full bg-white/10 hover:bg-white/20 text-white/80 py-3 rounded-2xl font-medium flex items-center justify-center gap-3 active:scale-95 text-sm">
+                            🔑 Acceso Administrador
+                        </button>
+                    </div>
+                )}
+                {mode === 'pin' && (
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-3 mb-2">
+                            <button onClick={() => { setMode('main'); setError(''); }} className="text-white/60 hover:text-white text-xl">←</button>
+                            <div>
+                                <p className="text-white font-bold">Ingresa tu PIN</p>
+                                <p className="text-white/50 text-xs">4 a 8 digitos numericos</p>
+                            </div>
+                        </div>
+                        <PinKeyboard onSubmit={handlePin} loading={loading} error={error} />
+                    </div>
+                )}
+                {mode === 'admin' && (
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-3 mb-2">
+                            <button onClick={() => { setMode('main'); setError(''); }} className="text-white/60 hover:text-white text-xl">←</button>
+                            <p className="text-white font-bold">Administrador</p>
+                        </div>
+                        <input type="password" placeholder="Contrasena" autoFocus
+                            className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/40 text-sm focus:outline-none focus:border-sky-400"
+                            value={pass} onChange={e => setPass(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleAdmin(); }} />
+                        {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+                        <button onClick={handleAdmin} disabled={loading || !pass}
+                            className="w-full bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-white py-3 rounded-xl font-bold active:scale-95">
+                            {loading ? 'Verificando...' : 'Ingresar'}
+                        </button>
+                    </div>
+                )}
+            </div>
+            <p className="mt-6 text-white/20 text-xs">Conteo Ciclico Pro v4.0</p>
+        </div>
+    );
+};
+
+
+// ─── MAIN APP v4 ──────────────────────────────────────────────────────────────
 const App: React.FC = () => {
-    const [role, setRole] = useState<Role | null>(null);
+    const [role, setRole]       = useState<Role | null>(null);
     const [activeTab, setActiveTab] = useState<Tab>('folio');
     const [folioId, setFolioId] = useState<string | null>(null);
-    const [folio, setFolio] = useState<Folio | null>(null);
+    const [folio, setFolio]     = useState<Folio | null>(null);
     const [catalog, setCatalog] = useState<Catalog>({ byBarcode: {}, byVariant: {} });
-    const [scans, setScans] = useState<Scan[]>([]);
-    const [colors, setColors] = useState<ColorMap>(DEFAULT_COLORS);
-    const [toasts, setToasts] = useState<Toast[]>([]);
+    const [scans, setScans]     = useState<Scan[]>([]);
+    const [colors, setColors]   = useState<ColorMap>(DEFAULT_COLORS);
+    const [toasts, setToasts]   = useState<Toast[]>([]);
     const [confetti, setConfetti] = useState(false);
-    const [showSettings, setShowSettings] = useState(false);
     const [startTime] = useState(Date.now());
     const [elapsed, setElapsed] = useState(0);
+    const [showSettings,  setShowSettings]  = useState(false);
+    const [showOperators, setShowOperators] = useState(false);
+    const [operatorName,  setOperatorName]  = useState('Scanner');
 
     useEffect(() => {
         if (!role) return;
-        const interval = setInterval(() => setElapsed(Math.floor((Date.now() - startTime) / 1000)), 1000);
-        return () => clearInterval(interval);
+        const iv = setInterval(() => setElapsed(Math.floor((Date.now() - startTime) / 1000)), 1000);
+        return () => clearInterval(iv);
     }, [role, startTime]);
 
-    // v4: cargar tema al iniciar
+    // Cargar tema guardado
+    useEffect(() => { const p = loadUIPrefs(); applyTheme(p.dark, p.font); }, []);
+
+    // Timeout watcher para scanners
     useEffect(() => {
-        const p = loadUIPrefs();
-        applyTheme(p.dark, p.font);
-    }, []);
+        if (!role || role === 'admin') return;
+        const iv = setInterval(() => { if (!loadSession()) { setRole(null); setFolioId(null); setFolio(null); setScans([]); } }, 30000);
+        const refresh = () => { const s = loadSession(); if (s) saveSession({ ...s, loginAt: Date.now() }); };
+        window.addEventListener('click', refresh);
+        window.addEventListener('keydown', refresh);
+        window.addEventListener('touchstart', refresh);
+        return () => { clearInterval(iv); window.removeEventListener('click', refresh); window.removeEventListener('keydown', refresh); window.removeEventListener('touchstart', refresh); };
+    }, [role]);
 
     const formatElapsed = () => {
-        const h = Math.floor(elapsed / 3600), m = Math.floor((elapsed % 3600) / 60), s = elapsed % 60;
-        return `${h > 0 ? h + 'h ' : ''}${m}m ${s}s`;
+        const h = Math.floor(elapsed/3600), m = Math.floor((elapsed%3600)/60), s = elapsed%60;
+        return `${h>0?h+'h ':''}${m}m ${s}s`;
     };
 
     const addToast = useCallback((msg: string, type: ToastType = 'info') => {
@@ -2073,11 +2251,7 @@ const App: React.FC = () => {
     }, [scans.length]);
 
     useEffect(() => {
-        // Colores en localStorage
-        try {
-            const cm = localStorage.getItem('conteo:colors');
-            if (cm) setColors(prev => ({ ...prev, ...JSON.parse(cm) }));
-        } catch {}
+        try { const cm = localStorage.getItem('conteo:colors'); if (cm) setColors(prev => ({ ...prev, ...JSON.parse(cm) })); } catch {}
     }, []);
 
     useEffect(() => {
@@ -2087,8 +2261,6 @@ const App: React.FC = () => {
         return () => { unsubFolio(); unsubScans(); };
     }, [folioId]);
 
-    // Reconstruir catálogo en memoria desde el teórico del folio activo
-    // No se persiste — se regenera automáticamente al cambiar de folio
     useEffect(() => {
         if (!folio?.theoreticalMap) { setCatalog({ byBarcode: {}, byVariant: {} }); return; }
         const byVariant: Catalog['byVariant'] = {};
@@ -2098,21 +2270,17 @@ const App: React.FC = () => {
             if (!parts.mod) continue;
             const item = { mod: parts.mod, color: parts.color || '', talla: parts.talla || '', vkey, category: parts.category };
             byVariant[vkey] = item;
-            const bc = generateBarcode(parts.mod, parts.color || '', parts.talla || '', colors);
-            byBarcode[bc] = item;
+            if (parts.barcode) byBarcode[parts.barcode] = item;
         }
-        setCatalog({ byBarcode, byVariant });
-    }, [folio?.theoreticalMap, colors]);
+        setCatalog({ byVariant, byBarcode });
+    }, [folio?.theoreticalMap]);
 
-    const handleLogin = async (r: Role) => {
+    const handleLogin = async (r: Role, opName?: string) => {
         setRole(r);
+        if (opName) setOperatorName(opName);
         if (r === 'scanner') {
-            // Auto-join last open folio
             const f = await fbGetLastOpenFolio() as Folio | undefined;
-            if (f) {
-                setFolioId(f.id);
-                setFolio(f);
-            }
+            if (f) { setFolioId(f.id); setFolio(f); }
             setActiveTab('escanear');
         } else {
             setActiveTab('folio');
@@ -2123,70 +2291,69 @@ const App: React.FC = () => {
         setColors(m);
         try { localStorage.setItem('conteo:colors', JSON.stringify(m)); } catch {}
     };
-    const handleUpdateCatalog = () => { /* catalog se reconstruye automáticamente desde folio.theoreticalMap */ };
-    const handleTabChange = useCallback((t: Tab) => { setActiveTab(t); window.scrollTo(0, 0); }, []);
+    const handleUpdateCatalog = () => {};
+    const handleTabChange = useCallback((t: Tab) => { setActiveTab(t); window.scrollTo(0,0); }, []);
 
     if (!role) return <LoginScreen onLogin={handleLogin} />;
 
-    // Tabs config
     const tabs = [
-        { id: 'folio', label: 'Inventarios', icon: <FileText />, roles: ['admin'] },
-        { id: 'existencias', label: 'Cargar', icon: <Boxes />, roles: ['admin'] },
-        { id: 'escanear', label: 'Escanear', icon: <QrCode />, roles: ['scanner'] },
-        { id: 'sesiones', label: 'Sesiones', icon: <Users />, roles: ['admin'], badge: 0 },
-        { id: 'reporte', label: 'Reporte', icon: <BarChart3 />, roles: ['admin'] },
-        { id: 'consulta', label: 'Consulta', icon: <Search />, roles: ['admin'] },
-        { id: 'historial', label: 'Historial', icon: <History />, roles: ['admin'] },
-        { id: 'colores', label: 'Colores', icon: <Palette />, roles: ['admin'] },
-        { id: 'database', label: 'DB', icon: <Database />, roles: ['admin'] },
-        { id: 'info', label: 'Info', icon: <BookOpen />, roles: ['admin'] },
+        { id: 'folio',      label: 'Inventarios', icon: <FileText />,  roles: ['admin'] },
+        { id: 'existencias',label: 'Cargar',       icon: <Boxes />,     roles: ['admin'] },
+        { id: 'escanear',   label: 'Escanear',     icon: <QrCode />,    roles: ['scanner'] },
+        { id: 'sesiones',   label: 'Sesiones',     icon: <Users />,     roles: ['admin'], badge: 0 },
+        { id: 'reporte',    label: 'Reporte',       icon: <BarChart3 />, roles: ['admin'] },
+        { id: 'consulta',   label: 'Consulta',      icon: <Search />,    roles: ['admin'] },
+        { id: 'historial',  label: 'Historial',     icon: <History />,   roles: ['admin'] },
+        { id: 'colores',    label: 'Colores',       icon: <Palette />,   roles: ['admin'] },
+        { id: 'database',   label: 'DB',            icon: <Database />,  roles: ['admin'] },
+        { id: 'info',       label: 'Info',          icon: <BookOpen />,  roles: ['admin'] },
     ];
-
     const visibleTabs = role === 'scanner' ? [] : tabs.filter(t => t.roles.includes(role!));
 
     return (
         <div className="flex flex-col h-screen bg-slate-50 dark:bg-slate-950 dark:text-white">
+            <OfflineBanner />
             <ToastContainer toasts={toasts} onRemove={id => setToasts(prev => prev.filter(t => t.id !== id))} />
             <Confetti active={confetti} />
 
-            {/* Header */}
             <header className="bg-white dark:bg-slate-900 dark:border-slate-700 border-b px-4 py-3 flex justify-between items-center shadow-sm z-10 flex-shrink-0">
                 <div className="flex items-center gap-2 overflow-hidden">
                     {folio ? (
                         <div className="flex flex-col">
                             <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider leading-none">Inventario Activo</span>
-                            <span className="font-bold text-slate-800 text-sm truncate max-w-[140px] sm:max-w-xs">{folio.name}</span>
+                            <span className="font-bold text-slate-800 dark:text-white text-sm truncate max-w-[140px] sm:max-w-xs">{folio.name}</span>
                         </div>
-                    ) : <span className="font-bold text-slate-800 text-sm">Conteo Cíclico Pro</span>}
+                    ) : <span className="font-bold text-slate-800 dark:text-white text-sm">Conteo Ciclico Pro</span>}
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                    <div className="flex items-center gap-1 text-xs text-emerald-500 font-medium">
-                        <Wifi size={12} /> Live
-                    </div>
+                    <div className="flex items-center gap-1 text-xs text-emerald-500 font-medium"><Wifi size={12} /> Live</div>
                     {role === 'admin' && <div className="flex items-center gap-1 text-xs text-slate-400"><Timer size={12} />{formatElapsed()}</div>}
-                    <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${role === 'admin' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}`}>{role}</span>
+                    <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${role === 'admin' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}`}>
+                        {role === 'scanner' ? operatorName : role}
+                    </span>
+                    {role === 'admin' && (
+                        <button onClick={() => setShowOperators(true)} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Operadores">👥</button>
+                    )}
                     <button onClick={() => setShowSettings(true)} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Apariencia">⚙️</button>
-                    <button onClick={() => { setRole(null); setFolioId(null); setFolio(null); setScans([]); }} className="p-1.5 text-red-400 hover:text-red-600 rounded-lg hover:bg-red-50"><LogOut size={18} /></button>
+                    <button onClick={() => { clearSession(); setRole(null); setFolioId(null); setFolio(null); setScans([]); }} className="p-1.5 text-red-400 hover:text-red-600 rounded-lg hover:bg-red-50"><LogOut size={18} /></button>
                 </div>
             </header>
 
-            {/* Main */}
             <main className={`flex-1 overflow-auto p-4 ${role === 'admin' ? 'pb-24' : 'pb-4'}`}>
                 <ErrorBoundary tab={activeTab}>
-                    {activeTab === 'folio' && role === 'admin' && <FolioTab onJoin={(id) => { setFolioId(id); setActiveTab('reporte'); }} onCreate={(id) => setFolioId(id)} addToast={addToast} colors={colors} catalog={catalog} />}
-                    {activeTab === 'existencias' && role === 'admin' && <StockTab folioId={folioId} catalog={catalog} colors={colors} onUpdate={handleUpdateCatalog} addToast={addToast} />}
-                    {activeTab === 'escanear' && role === 'scanner' && <ScannerSessionTab colors={colors} catalog={catalog} folio={folio} addToast={addToast} />}
-                    {activeTab === 'sesiones' && role === 'admin' && <SessionsAdminTab addToast={addToast} />}
-                    {activeTab === 'reporte' && role === 'admin' && <ReportTab folio={folio} scans={scans} onTabChange={handleTabChange} addToast={addToast} />}
-                    {activeTab === 'consulta' && role === 'admin' && <QueryTab folio={folio} scans={scans} />}
-                    {activeTab === 'historial' && role === 'admin' && <HistoryTab scans={scans} folioId={folioId} folio={folio} onDataChange={() => {}} addToast={addToast} />}
-                    {activeTab === 'colores' && role === 'admin' && <DictTab colors={colors} onUpdate={handleUpdateColorMap} addToast={addToast} />}
-                    {activeTab === 'database' && role === 'admin' && <DatabaseTab addToast={addToast} />}
-                    {activeTab === 'info' && role === 'admin' && <InfoTab />}
+                    {activeTab === 'folio'       && role === 'admin'   && <FolioTab onJoin={(id) => { setFolioId(id); setActiveTab('reporte'); }} onCreate={(id) => setFolioId(id)} addToast={addToast} colors={colors} catalog={catalog} />}
+                    {activeTab === 'existencias' && role === 'admin'   && <StockTab folioId={folioId} catalog={catalog} colors={colors} onUpdate={handleUpdateCatalog} addToast={addToast} />}
+                    {activeTab === 'escanear'    && role === 'scanner' && <ScannerSessionTab colors={colors} catalog={catalog} folio={folio} addToast={addToast} />}
+                    {activeTab === 'sesiones'    && role === 'admin'   && <SessionsAdminTab addToast={addToast} />}
+                    {activeTab === 'reporte'     && role === 'admin'   && <ReportTab folio={folio} scans={scans} onTabChange={handleTabChange} addToast={addToast} />}
+                    {activeTab === 'consulta'    && role === 'admin'   && <QueryTab folio={folio} scans={scans} />}
+                    {activeTab === 'historial'   && role === 'admin'   && <HistoryTab scans={scans} folioId={folioId} folio={folio} onDataChange={() => {}} addToast={addToast} />}
+                    {activeTab === 'colores'     && role === 'admin'   && <DictTab colors={colors} onUpdate={handleUpdateColorMap} addToast={addToast} />}
+                    {activeTab === 'database'    && role === 'admin'   && <DatabaseTab addToast={addToast} />}
+                    {activeTab === 'info'        && role === 'admin'   && <InfoTab />}
                 </ErrorBoundary>
             </main>
 
-            {/* Bottom Nav — solo admin */}
             {role === 'admin' && visibleTabs.length > 0 && (
                 <nav className="bg-white dark:bg-slate-900 dark:border-slate-700 border-t flex justify-around fixed bottom-0 w-full z-20 overflow-x-auto py-1">
                     {visibleTabs.map(t => (
@@ -2198,10 +2365,10 @@ const App: React.FC = () => {
                 </nav>
             )}
 
-            <style>{`
-                @keyframes confetti { from { transform: translateY(-20px) rotate(0deg); opacity: 1; } to { transform: translateY(100vh) rotate(720deg); opacity: 0; } }
-            `}</style>
-            {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
+            <style>{`@keyframes confetti { from { transform: translateY(-20px) rotate(0deg); opacity:1; } to { transform: translateY(100vh) rotate(720deg); opacity:0; } }`}</style>
+
+            {showSettings  && <SettingsPanel  onClose={() => setShowSettings(false)} />}
+            {showOperators && <OperatorsPanel onClose={() => setShowOperators(false)} addToast={addToast} />}
         </div>
     );
 };

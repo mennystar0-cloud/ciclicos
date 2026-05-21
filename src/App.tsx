@@ -71,6 +71,9 @@ interface ScanSession {
     id: string;
     area: string;
     operator: string;
+    operadorId?: string;
+    deviceId?: string;
+    sucursalId?: string;
     createdAt: any;
     count: number;
 }
@@ -189,16 +192,25 @@ const CoverageRing = ({ pct, size = 80 }: { pct: number; size?: number }) => {
 };
 
 // ─── SCANNER SESSION TAB ──────────────────────────────────────────────────────
-const ScannerSessionTab = ({ colors, catalog, folio, addToast }: {
+const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucursalId }: {
     colors: ColorMap; catalog: Catalog;
     folio: Folio | null;
     addToast: (m: string, t?: ToastType) => void;
+    appSession?: AppSession | null;
+    sucursalId?: string;
 }) => {
     const [phase, setPhase] = useState<'menu' | 'scanning'>('menu');
     const [currentSession, setCurrentSession] = useState<ScanSession | null>(null);
     const [sessionItems, setSessionItems] = useState<SessionItem[]>([]);
     const [newArea, setNewArea] = useState('');
-    const [newOperator, setNewOperator] = useState(() => localStorage.getItem('conteo:user') || '');
+    const [newOperator, setNewOperator] = useState(() => appSession?.nombre || localStorage.getItem('conteo:user') || '');
+    const [conflictSession, setConflictSession] = useState<ScanSession | null>(null);
+    const [showConflict, setShowConflict] = useState(false);
+    const deviceId = React.useMemo(() => {
+        let id = localStorage.getItem('conteo:deviceId');
+        if (!id) { id = crypto.randomUUID(); localStorage.setItem('conteo:deviceId', id); }
+        return id;
+    }, []);
     const [barcode, setBarcode] = useState('');
     const [flash, setFlash] = useState<'ok' | 'err' | null>(null);
     const [lastScan, setLastScan] = useState<any>(null);
@@ -243,30 +255,50 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast }: {
         } catch {}
     }, [soundOn]);
 
-    const startNewSession = async () => {
-        if (!newArea.trim()) { addToast('Escribe el área a escanear', 'warning'); return; }
-        if (!newOperator.trim()) { addToast('Escribe tu nombre', 'warning'); return; }
+    const doStartSession = async (area: string, operator: string, opId?: string) => {
         setLoading(true);
-        // Delete previous session if exists
         const prevId = localStorage.getItem('conteo:sessionId');
-        if (prevId) {
-            await fbDeleteSession(prevId).catch(() => {});
-        }
+        if (prevId) { await fbDeleteSession(prevId, sucursalId).catch(() => {}); }
         const id = 'SS-' + Date.now().toString(36).toUpperCase();
         const session: ScanSession = {
-            id, area: newArea.trim().toUpperCase(),
-            operator: newOperator.trim(),
+            id, area: area.toUpperCase(), operator,
+            operadorId: opId ?? appSession?.operadorId,
+            deviceId,
+            sucursalId: sucursalId ?? appSession?.sucursalId,
             createdAt: Date.now(), count: 0
         };
         await fbCreateScanSession(session);
         localStorage.setItem('conteo:sessionId', id);
-        localStorage.setItem('conteo:user', newOperator.trim());
+        localStorage.setItem('conteo:user', operator);
         setCurrentSession(session);
         setSessionItems([]);
         setStreak(0);
         setLoading(false);
         setPhase('scanning');
-        addToast(`Sesión iniciada en ${session.area}`, 'success');
+        addToast('Sesion iniciada en ' + session.area, 'success');
+    };
+
+    const startNewSession = async () => {
+        if (!newArea.trim()) { addToast('Escribe el area a escanear', 'warning'); return; }
+        const operatorName = appSession?.nombre || newOperator.trim();
+        if (!operatorName) { addToast('Escribe tu nombre', 'warning'); return; }
+
+        // Verificar si ya hay una sesion activa de este operador en otro dispositivo
+        if (appSession?.operadorId) {
+            setLoading(true);
+            const allSessions = await fbGetAllSessions(sucursalId);
+            const activeSession = (allSessions as ScanSession[]).find(
+                s => s.operadorId === appSession.operadorId && s.deviceId && s.deviceId !== deviceId
+            );
+            setLoading(false);
+            if (activeSession) {
+                setConflictSession(activeSession);
+                setShowConflict(true);
+                return;
+            }
+        }
+
+        await doStartSession(newArea.trim(), operatorName, appSession?.operadorId);
 
         // subscribe
         fbSubscribeToSession(id, (s) => { if (s) setCurrentSession(s as ScanSession); });
@@ -458,6 +490,46 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast }: {
     );
 
     // ── SCANNING PHASE ──
+    // Modal conflicto de sesion
+    const ConflictModal = () => (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 max-w-sm w-full shadow-2xl space-y-4">
+                <div className="text-center">
+                    <div className="text-4xl mb-2">⚠️</div>
+                    <h3 className="font-black text-slate-800 dark:text-white text-lg">Sesion activa detectada</h3>
+                    <p className="text-slate-500 dark:text-slate-400 text-sm mt-2">
+                        <strong>{conflictSession?.operator}</strong> ya tiene una sesion activa en otro dispositivo
+                        en el area <strong>{conflictSession?.area}</strong> con <strong>{conflictSession?.count ?? 0}</strong> escaneos.
+                    </p>
+                </div>
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl p-3 text-xs text-amber-700 dark:text-amber-300">
+                    Si continuas aqui, el otro dispositivo perdera la sesion activa. Los escaneos realizados quedaran guardados en el historial.
+                </div>
+                <div className="space-y-2">
+                    <button
+                        onClick={async () => {
+                            setShowConflict(false);
+                            await doStartSession(
+                                newArea.trim() || conflictSession?.area || '',
+                                appSession?.nombre || newOperator.trim(),
+                                appSession?.operadorId
+                            );
+                        }}
+                        className="w-full bg-sky-500 hover:bg-sky-400 text-white py-3 rounded-xl font-bold active:scale-95"
+                    >
+                        Continuar en este dispositivo
+                    </button>
+                    <button
+                        onClick={() => { setShowConflict(false); setConflictSession(null); }}
+                        className="w-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-white py-3 rounded-xl font-medium active:scale-95"
+                    >
+                        Cancelar
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+
     return (
         <div className={`space-y-4 ${flash === 'ok' ? 'bg-emerald-50' : flash === 'err' ? 'bg-red-50' : ''} rounded-xl transition-colors duration-300`}>
             {/* Session header */}
@@ -500,6 +572,7 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast }: {
                 <div className="flex gap-2">
                     <input
                         ref={inputRef}
+            {showConflict && <ConflictModal />}
                         type="text"
                         inputMode="numeric"
                         className="flex-1 border-2 border-sky-300 rounded-xl p-3 text-lg font-mono focus:outline-none focus:border-sky-500"
@@ -2611,7 +2684,7 @@ const App: React.FC = () => {
                 <ErrorBoundary tab={activeTab}>
                     {activeTab === 'folio'       && role === 'admin'   && <FolioTab onJoin={(id) => { setFolioId(id); setActiveTab('reporte'); }} onCreate={(id) => setFolioId(id)} addToast={addToast} colors={colors} catalog={catalog} sucursalId={sucursalId ?? undefined} />}
                     {activeTab === 'existencias' && role === 'admin'   && <StockTab folioId={folioId} catalog={catalog} colors={colors} onUpdate={() => {}} addToast={addToast} sucursalId={sucursalId ?? undefined} />}
-                    {activeTab === 'escanear'    && role === 'scanner' && <ScannerSessionTab colors={colors} catalog={catalog} folio={folio} addToast={addToast} />}
+                    {activeTab === 'escanear'    && role === 'scanner' && <ScannerSessionTab colors={colors} catalog={catalog} folio={folio} addToast={addToast} appSession={session} sucursalId={sucursalId ?? undefined} />}
                     {activeTab === 'sesiones'    && role === 'admin'   && <SessionsAdminTab addToast={addToast} />}
                     {activeTab === 'reporte'     && role === 'admin'   && <ReportTab folio={folio} scans={scans} onTabChange={handleTabChange} addToast={addToast} />}
                     {activeTab === 'consulta'    && role === 'admin'   && <QueryTab folio={folio} scans={scans} />}

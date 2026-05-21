@@ -5,7 +5,10 @@ import {
     fbSubscribeToScans, fbSaveSettings, fbLoadSettings, fbGetFullDump,
     fbRestoreFullDump, fbCreateScanSession, fbAddSessionScan,
     fbSubscribeToSession, fbSubscribeToSessionItems, fbSubscribeToAllSessions,
-    fbDeleteSession, fbGetSessionItems
+    fbDeleteSession, fbGetSessionItems,
+    loginSuperAdmin, fbLoginSucursal, fbGetSucursales, fbSaveSucursal,
+    fbDeleteSucursal, fbGetAllSucursalesStats, fbGetOperadores,
+    fbSaveOperador, fbDeleteOperador, fbLoginOperador, hashPassword
 } from './firebase.ts';
 import type { Role, Tab, Folio, Catalog, ColorMap, Scan, StockMap } from './types.ts';
 import {

@@ -622,7 +622,7 @@ const SessionsAdminTab = ({ addToast }: { addToast: (m: string, t?: ToastType) =
         setSyncing(session.id);
         try {
             // Obtener folio activo
-            const folios = await fbGetAllFolios() as Folio[];
+            const folios = await fbGetAllFolios(sucursalId) as Folio[];
             const folio = folios.find(f => f.state === 'open');
             if (!folio) { addToast('No hay inventario abierto para sincronizar', 'warning'); setSyncing(null); return; }
 
@@ -739,10 +739,10 @@ const SessionsAdminTab = ({ addToast }: { addToast: (m: string, t?: ToastType) =
 };
 
 // ─── FOLIO TAB ────────────────────────────────────────────────────────────────
-const FolioTab = ({ onJoin, onCreate, addToast, colors, catalog }: {
+const FolioTab = ({ onJoin, onCreate, addToast, colors, catalog, sucursalId }: {
     onJoin: (id: string) => void; onCreate: (id: string) => void;
     addToast: (m: string, t?: ToastType) => void;
-    colors: ColorMap; catalog: Catalog;
+    colors: ColorMap; catalog: Catalog; sucursalId?: string;
 }) => {
     const [folios, setFolios] = useState<Folio[]>([]);
     const [creating, setCreating] = useState(false);
@@ -757,7 +757,7 @@ const FolioTab = ({ onJoin, onCreate, addToast, colors, catalog }: {
 
     const load = useCallback(async () => {
         setLoading(true);
-        const all = await fbGetAllFolios();
+        const all = await fbGetAllFolios(sucursalId);
         setFolios((all as Folio[]).sort((a, b) => b.createdAt - a.createdAt));
         const wh = JSON.parse(localStorage.getItem('conteo:warehouses') || '[]');
         setSavedWarehouses(wh);
@@ -791,20 +791,20 @@ const FolioTab = ({ onJoin, onCreate, addToast, colors, catalog }: {
     const handleClose = async (fid: string) => { setClosingFolio(fid); };
 
     const confirmClose = async (fid: string) => {
-        const all = await fbGetAllFolios();
+        const all = await fbGetAllFolios(sucursalId);
         const f = all.find((x: any) => x.id === fid) as Folio;
         if (!f) return;
-        await fbUpdateFolio({ ...f, state: 'closed' });
+        await fbUpdateFolio({ ...f, state: 'closed', sucursalId });
         setClosingFolio(null);
         addToast('Inventario cerrado', 'info');
         await load();
     };
 
     const handleReopen = async (fid: string) => {
-        const all = await fbGetAllFolios();
+        const all = await fbGetAllFolios(sucursalId);
         const f = all.find((x: any) => x.id === fid) as Folio;
         if (!f) return;
-        await fbUpdateFolio({ ...f, state: 'open' });
+        await fbUpdateFolio({ ...f, state: 'open', sucursalId });
         addToast('Inventario reabierto', 'success');
         await load();
     };
@@ -914,7 +914,7 @@ const FolioTab = ({ onJoin, onCreate, addToast, colors, catalog }: {
 };
 
 // ─── STOCK TAB ────────────────────────────────────────────────────────────────
-const StockTab = ({ folioId, catalog, colors, onUpdate, addToast }: {
+const StockTab = ({ folioId, catalog, colors, onUpdate, addToast, sucursalId }: {
     folioId: string | null; catalog: Catalog; colors: ColorMap;
     onUpdate: () => void; addToast: (m: string, t?: ToastType) => void;
 }) => {
@@ -971,7 +971,7 @@ const StockTab = ({ folioId, catalog, colors, onUpdate, addToast }: {
             }
 
             // 2. Buscar el folio directamente por ID (sin traer todos)
-            const all = await fbGetAllFolios();
+            const all = await fbGetAllFolios(sucursalId);
             const folio = (all as Folio[]).find(f => f.id === folioId);
             if (!folio) {
                 addToast('No se encontró el inventario en Firebase', 'error');
@@ -991,7 +991,7 @@ const StockTab = ({ folioId, catalog, colors, onUpdate, addToast }: {
             }
 
             // 4. Solo guardar folio en Firebase — el catálogo se reconstruye automáticamente
-            await fbUpdateFolio({ ...folio, theoreticalMap: mergedMap });
+            await fbUpdateFolio({ ...folio, theoreticalMap: mergedMap, sucursalId });
 
             onUpdate();
             addToast(`✓ ${preview.length} variantes cargadas correctamente`, 'success');
@@ -1836,7 +1836,7 @@ const DatabaseTab = ({ addToast }: { addToast: (m: string, t?: ToastType) => voi
     const [lastBackup, setLastBackup] = useState<string | null>(() => localStorage.getItem('conteo:lastBackup'));
 
     const handleExport = async () => {
-        const dump = await fbGetFullDump();
+        const dump = await fbGetFullDump(sucursalId);
         const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a'); a.href = url; a.download = `conteo-backup-${new Date().toISOString().split('T')[0]}.json`; a.click();
@@ -2609,8 +2609,8 @@ const App: React.FC = () => {
 
             <main className={`flex-1 overflow-auto p-4 ${role === 'admin' ? 'pb-24' : 'pb-4'}`}>
                 <ErrorBoundary tab={activeTab}>
-                    {activeTab === 'folio'       && role === 'admin'   && <FolioTab onJoin={(id) => { setFolioId(id); setActiveTab('reporte'); }} onCreate={(id) => setFolioId(id)} addToast={addToast} colors={colors} catalog={catalog} />}
-                    {activeTab === 'existencias' && role === 'admin'   && <StockTab folioId={folioId} catalog={catalog} colors={colors} onUpdate={() => {}} addToast={addToast} />}
+                    {activeTab === 'folio'       && role === 'admin'   && <FolioTab onJoin={(id) => { setFolioId(id); setActiveTab('reporte'); }} onCreate={(id) => setFolioId(id)} addToast={addToast} colors={colors} catalog={catalog} sucursalId={sucursalId ?? undefined} />}
+                    {activeTab === 'existencias' && role === 'admin'   && <StockTab folioId={folioId} catalog={catalog} colors={colors} onUpdate={() => {}} addToast={addToast} sucursalId={sucursalId ?? undefined} />}
                     {activeTab === 'escanear'    && role === 'scanner' && <ScannerSessionTab colors={colors} catalog={catalog} folio={folio} addToast={addToast} />}
                     {activeTab === 'sesiones'    && role === 'admin'   && <SessionsAdminTab addToast={addToast} />}
                     {activeTab === 'reporte'     && role === 'admin'   && <ReportTab folio={folio} scans={scans} onTabChange={handleTabChange} addToast={addToast} />}

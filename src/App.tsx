@@ -2275,12 +2275,13 @@ const SuperAdminPanel = ({ onLogout }: { onLogout: () => void }) => {
 
 // ─── LOGIN SCREEN v4 MULTI-SUCURSAL ───────────────────────────────────────────
 const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => void }) => {
-    const [mode, setMode]       = React.useState<'main'|'pin'|'admin'|'super'>('main');
-    const [usuario, setUsuario] = React.useState('');
+    const [mode, setMode]         = React.useState<'main'|'pin'|'admin'|'super'|'elegir'>('main');
+    const [usuario, setUsuario]   = React.useState('');
     const [password, setPassword] = React.useState('');
-    const [loading, setLoading] = React.useState(false);
-    const [error, setError]     = React.useState('');
+    const [loading, setLoading]   = React.useState(false);
+    const [error, setError]       = React.useState('');
     const [sucursal, setSucursal] = React.useState<any>(null);
+    const [sucursales, setSucursales] = React.useState<any[]>([]);
 
     // Al abrir intenta cargar la sucursal guardada en este dispositivo
     React.useEffect(() => {
@@ -2288,6 +2289,12 @@ const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => void }) =>
         if (saved) { try { setSucursal(JSON.parse(saved)); } catch {} }
         const p = loadUIPrefs(); applyTheme(p.dark, p.font);
     }, []);
+
+    // Cargar lista de sucursales cuando se necesita elegir
+    const loadSucursales = async () => {
+        const list = await fbGetSucursales();
+        setSucursales(list.filter((s: any) => s.activa));
+    };
 
     const handleAdminLogin = async () => {
         setLoading(true); setError('');
@@ -2354,14 +2361,55 @@ const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => void }) =>
                 {/* MAIN: sin sucursal configurada */}
                 {mode === 'main' && !sucursal && (
                     <div className="space-y-3">
-                        <button onClick={() => { setMode('admin'); setError(''); }}
+                        <button onClick={async () => { await loadSucursales(); setMode('elegir'); setError(''); }}
                             className="w-full bg-sky-500 hover:bg-sky-400 text-white py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 active:scale-95">
-                            🔑 Ingresar como Admin
+                            📷 Soy Escaner
+                        </button>
+                        <button onClick={() => { setMode('admin'); setError(''); }}
+                            className="w-full bg-white/15 hover:bg-white/25 text-white py-3 rounded-2xl font-semibold flex items-center justify-center gap-2 active:scale-95">
+                            🔑 Admin de Sucursal
                         </button>
                         <button onClick={() => { setMode('super'); setError(''); }}
-                            className="w-full bg-white/10 hover:bg-white/20 text-white/70 py-3 rounded-2xl text-sm flex items-center justify-center gap-2">
+                            className="w-full bg-white/10 hover:bg-white/20 text-white/70 py-2.5 rounded-2xl text-sm flex items-center justify-center gap-2">
                             ⭐ SuperAdmin
                         </button>
+                    </div>
+                )}
+
+                {/* ELEGIR SUCURSAL */}
+                {mode === 'elegir' && (
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-3 mb-2">
+                            <button onClick={() => { setMode('main'); setError(''); }} className="text-white/60 hover:text-white text-xl">←</button>
+                            <div>
+                                <p className="text-white font-bold">Selecciona tu sucursal</p>
+                                <p className="text-white/50 text-xs">Luego ingresa tu PIN</p>
+                            </div>
+                        </div>
+                        {sucursales.length === 0 && (
+                            <p className="text-center text-white/50 text-sm py-4">No hay sucursales disponibles</p>
+                        )}
+                        <div className="space-y-2 max-h-64 overflow-y-auto">
+                            {sucursales.map((s: any) => (
+                                <button key={s.id}
+                                    onClick={() => {
+                                        localStorage.setItem('conteo:sucursal', JSON.stringify(s));
+                                        setSucursal(s);
+                                        setMode('main');
+                                        setError('');
+                                    }}
+                                    className="w-full bg-white/15 hover:bg-white/25 text-white py-4 rounded-2xl flex items-center gap-3 px-4 active:scale-95 transition-all">
+                                    <div className="w-10 h-10 rounded-xl bg-sky-500/30 flex items-center justify-center flex-shrink-0">
+                                        <span className="text-sky-300 font-black text-lg">{s.nombre.slice(0,1).toUpperCase()}</span>
+                                    </div>
+                                    <div className="text-left">
+                                        <p className="font-bold">{s.nombre}</p>
+                                        <p className="text-white/50 text-xs">Toca para seleccionar</p>
+                                    </div>
+                                    <span className="ml-auto text-white/40">→</span>
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 )}
 

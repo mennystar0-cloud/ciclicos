@@ -874,7 +874,8 @@ const FolioTab = ({ onJoin, onCreate, addToast, colors, catalog, sucursalId }: {
         const f: Folio = {
             id, name: name.trim(), almacen: almacen.trim() || 'Tienda',
             temporada: temporada.trim(), state: 'open',
-            theoreticalMap: {}, existenciasMap: {}, areaCounters: {}, createdAt: Date.now()
+            theoreticalMap: {}, existenciasMap: {}, areaCounters: {}, createdAt: Date.now(),
+            sucursalId,
         };
         await fbCreateFolio(f);
         if (almacen.trim() && !savedWarehouses.includes(almacen.trim())) {

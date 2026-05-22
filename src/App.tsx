@@ -1542,7 +1542,7 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
                             )}
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                            <p style={{ fontSize: 11, color: '#94a3b8', margin: 0 }}>Conteo Cíclico Pro v3.1</p>
+                            <p style={{ fontSize: 11, color: '#94a3b8', margin: 0 }}>Conteo Cíclico Pro v4.0</p>
                             <p style={{ fontSize: 11, color: '#94a3b8', margin: '2px 0 0' }}>{printDate}</p>
                         </div>
                     </div>
@@ -1633,7 +1633,7 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
 
                 {/* Footer */}
                 <div style={{ borderTop: '1px solid #e2e8f0', marginTop: 20, paddingTop: 10, display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#94a3b8' }}>
-                    <span>Conteo Cíclico Pro v3.1 · Firebase Sync</span>
+                    <span>Conteo Cíclico Pro v4.0 · Firebase Sync</span>
                     <span>{printMode === 'simplificado' ? `SKUs escaneados: ${simplificadoRows.length}` : `Total SKUs: ${report.rows.length}`} · Escaneos: {scans.length}</span>
                     <span>{printDate}</span>
                 </div>
@@ -2400,13 +2400,15 @@ const SuperAdminPanel = ({ onLogout }: { onLogout: () => void }) => {
 
 // ─── LOGIN SCREEN v4 MULTI-SUCURSAL ───────────────────────────────────────────
 const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => void }) => {
-    const [mode, setMode]         = React.useState<'main'|'pin'|'admin'|'super'|'elegir'>('main');
+    const [mode, setMode]         = React.useState<'main'|'pin'|'admin'|'super'|'elegir'|'operador'>('main');
     const [usuario, setUsuario]   = React.useState('');
     const [password, setPassword] = React.useState('');
     const [loading, setLoading]   = React.useState(false);
     const [error, setError]       = React.useState('');
     const [sucursal, setSucursal] = React.useState<any>(null);
     const [sucursales, setSucursales] = React.useState<any[]>([]);
+    const [operadores, setOperadores] = React.useState<any[]>([]);
+    const [opSeleccionado, setOpSeleccionado] = React.useState<any>(null);
 
     // Al abrir intenta cargar la sucursal guardada en este dispositivo
     React.useEffect(() => {
@@ -2419,6 +2421,11 @@ const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => void }) =>
     const loadSucursales = async () => {
         const list = await fbGetSucursales();
         setSucursales(list.filter((s: any) => s.activa));
+    };
+
+    const loadOperadoresSucursal = async (sucursalId: string) => {
+        const list = await fbGetOperadores(sucursalId);
+        setOperadores(list.filter((o: any) => o.activo));
     };
 
     const handleAdminLogin = async () => {
@@ -2446,7 +2453,21 @@ const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => void }) =>
     const handlePin = async (pin: string) => {
         if (!sucursal) return;
         setLoading(true); setError('');
-        const op = await fbLoginOperador(sucursal.id, pin);
+        // Si hay operador seleccionado, verificar que el PIN sea el suyo
+        let op;
+        if (opSeleccionado) {
+            const hashed = await hashPassword(pin);
+            if (hashed !== opSeleccionado.pin) {
+                setLoading(false);
+                setError('PIN incorrecto para ' + opSeleccionado.nombre);
+                return;
+            }
+            op = opSeleccionado;
+            // Actualizar ultimo login
+            await fbSaveOperador(sucursal.id, { ...op, ultimoLogin: Date.now() });
+        } else {
+            op = await fbLoginOperador(sucursal.id, pin);
+        }
         setLoading(false);
         if (!op) { setError('PIN incorrecto o usuario inactivo'); return; }
         const timeoutMs = op.rol === 'scanner' ? 8*60*60*1000 : 2*60*60*1000;
@@ -2466,10 +2487,13 @@ const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => void }) =>
 
             <div className="w-full max-w-sm bg-white/10 backdrop-blur-xl rounded-3xl p-6 border border-white/20 shadow-2xl">
 
-                {/* MAIN: sucursal configurada → PIN directo */}
+                {/* MAIN: sucursal configurada → elegir operador */}
                 {mode === 'main' && sucursal && (
                     <div className="space-y-3">
-                        <PinKeyboard onSubmit={handlePin} loading={loading} error={error} />
+                        <button onClick={async () => { await loadOperadoresSucursal(sucursal.id); setOpSeleccionado(null); setMode('operador'); setError(''); }}
+                            className="w-full bg-sky-500 hover:bg-sky-400 text-white py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 active:scale-95 shadow-lg">
+                            📷 Soy Escaner
+                        </button>
                         <div className="pt-2 border-t border-white/10 space-y-2">
                             <button onClick={() => { setMode('admin'); setError(''); setUsuario(''); setPassword(''); }}
                                 className="w-full bg-white/10 hover:bg-white/20 text-white/80 py-2.5 rounded-xl text-sm flex items-center justify-center gap-2">
@@ -2480,6 +2504,45 @@ const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => void }) =>
                                 Cambiar sucursal
                             </button>
                         </div>
+                    </div>
+                )}
+
+                {/* SELECCIONAR OPERADOR */}
+                {mode === 'operador' && (
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-3 mb-2">
+                            <button onClick={() => { setMode('main'); setError(''); setOpSeleccionado(null); }} className="text-white/60 hover:text-white text-xl">←</button>
+                            <div>
+                                <p className="text-white font-bold">¿Quién eres?</p>
+                                <p className="text-white/50 text-xs">Selecciona tu nombre</p>
+                            </div>
+                        </div>
+                        {operadores.length === 0 && (
+                            <div className="text-center py-6 space-y-2">
+                                <p className="text-white/50 text-sm">No hay operadores registrados.</p>
+                                <p className="text-white/30 text-xs">El admin debe crear operadores primero.</p>
+                            </div>
+                        )}
+                        <div className="space-y-2 max-h-72 overflow-y-auto">
+                            {operadores.map((op: any) => (
+                                <button key={op.id}
+                                    onClick={() => { setOpSeleccionado(op); setMode('pin'); setError(''); }}
+                                    className="w-full bg-white/15 hover:bg-white/25 text-white py-3 rounded-2xl flex items-center gap-3 px-4 active:scale-95 transition-all">
+                                    <div className="w-10 h-10 rounded-full bg-sky-500/30 flex items-center justify-center flex-shrink-0">
+                                        <span className="text-sky-200 font-bold text-sm">{op.nombre.slice(0,2).toUpperCase()}</span>
+                                    </div>
+                                    <div className="text-left flex-1">
+                                        <p className="font-bold text-sm">{op.nombre}</p>
+                                        <p className="text-white/40 text-xs">{op.rol === 'scanner' ? 'Escaner' : 'Supervisor'}</p>
+                                    </div>
+                                    <span className="text-white/30 text-lg">→</span>
+                                </button>
+                            ))}
+                        </div>
+                        <button onClick={() => { setOpSeleccionado(null); setMode('pin'); setError(''); }}
+                            className="w-full bg-white/8 hover:bg-white/15 text-white/50 py-2.5 rounded-xl text-xs text-center">
+                            Entrar sin identificarme
+                        </button>
                     </div>
                 )}
 

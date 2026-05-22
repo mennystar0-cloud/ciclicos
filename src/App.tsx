@@ -2589,7 +2589,7 @@ const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => void }) =>
 
 // ─── MAIN APP v4 ──────────────────────────────────────────────────────────────
 const App: React.FC = () => {
-    const [session, setSession]   = useState<AppSession | null>(() => loadSession());
+    const [session, setSession]   = useState<AppSession | null>(null);
     const [activeTab, setActiveTab] = useState<Tab>('folio');
     const [folioId, setFolioId]   = useState<string | null>(null);
     const [folio, setFolio]       = useState<Folio | null>(null);

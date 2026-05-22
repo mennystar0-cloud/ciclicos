@@ -869,10 +869,16 @@ const FolioTab = ({ onJoin, onCreate, addToast, colors, catalog, sucursalId }: {
     useEffect(() => { load(); }, [load]);
 
     const handleCreate = async () => {
-        if (!name.trim()) { addToast('Escribe un nombre', 'warning'); return; }
+        if (!almacen.trim()) { addToast('Escribe el almacen', 'warning'); return; }
+        // Verificar que no haya un folio abierto
+        const existing = folios.find(f => f.state === 'open');
+        if (existing) { addToast('Ya hay un inventario abierto: ' + existing.name, 'warning'); return; }
+        // Generar nombre automático: ALMACEN-TEMPORADA-FECHA
+        const fecha = new Date().toLocaleDateString('es-MX', { day:'2-digit', month:'2-digit', year:'2-digit' }).replace(/\//g,'-');
+        const autoName = [almacen.trim().toUpperCase(), temporada.trim() || '', fecha].filter(Boolean).join(' · ');
         const id = 'F-' + Date.now().toString(36).toUpperCase();
         const f: Folio = {
-            id, name: name.trim(), almacen: almacen.trim() || 'Tienda',
+            id, name: autoName, almacen: almacen.trim(),
             temporada: temporada.trim(), state: 'open',
             theoreticalMap: {}, existenciasMap: {}, areaCounters: {}, createdAt: Date.now(),
             sucursalId,
@@ -935,23 +941,41 @@ const FolioTab = ({ onJoin, onCreate, addToast, colors, catalog, sucursalId }: {
             </div>
 
             {creating && (
-                <div className="bg-white rounded-xl border border-sky-200 p-4 shadow-sm space-y-3">
-                    <p className="font-semibold text-slate-700">Nuevo Inventario</p>
-                    <input className="w-full border rounded-lg p-2 text-sm" placeholder="Nombre *" value={name} onChange={e => setName(e.target.value)} />
+                <div className="bg-white dark:bg-slate-800 rounded-xl border border-sky-200 dark:border-sky-900 p-4 shadow-sm space-y-3">
+                    <p className="font-semibold text-slate-700 dark:text-white">Nuevo Inventario</p>
+                    {/* El nombre se genera automático */}
+                    <div className="bg-sky-50 dark:bg-sky-900/20 rounded-lg p-2 text-xs text-sky-600 dark:text-sky-300">
+                        El nombre se genera automáticamente: ALMACEN · TEMPORADA · FECHA
+                    </div>
                     <div>
-                        <input className="w-full border rounded-lg p-2 text-sm" placeholder="Almacén / Tienda" value={almacen} onChange={e => setAlmacen(e.target.value)} />
+                        <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Almacén *</label>
+                        <input className="w-full border dark:border-slate-600 rounded-lg p-2 text-sm mt-1 dark:bg-slate-700 dark:text-white" placeholder="Ej: Caballero, Dama, Bodega..." value={almacen} onChange={e => setAlmacen(e.target.value)} autoFocus />
                         {savedWarehouses.length > 0 && (
                             <div className="flex flex-wrap gap-1 mt-1">
                                 {savedWarehouses.map(w => (
-                                    <button key={w} onClick={() => setAlmacen(w)} className="text-xs bg-slate-100 px-2 py-0.5 rounded-full text-slate-600">{w}</button>
+                                    <button key={w} onClick={() => setAlmacen(w)} className="text-xs bg-slate-100 dark:bg-slate-700 dark:text-slate-300 px-2 py-0.5 rounded-full text-slate-600">{w}</button>
                                 ))}
                             </div>
                         )}
                     </div>
-                    <input className="w-full border rounded-lg p-2 text-sm" placeholder="Temporada (opcional)" value={temporada} onChange={e => setTemporada(e.target.value)} />
+                    <div>
+                        <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Temporada</label>
+                        <input className="w-full border dark:border-slate-600 rounded-lg p-2 text-sm mt-1 dark:bg-slate-700 dark:text-white" placeholder="Ej: PV2025, OI2025 (opcional)" value={temporada} onChange={e => setTemporada(e.target.value)} />
+                    </div>
+                    {/* Preview del nombre */}
+                    {almacen.trim() && (
+                        <div className="bg-slate-50 dark:bg-slate-700 rounded-lg p-2 text-xs text-slate-500 dark:text-slate-300">
+                            Nombre: <strong>{[almacen.trim().toUpperCase(), temporada.trim() || '', new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'2-digit'}).replace(/\//g,'-')].filter(Boolean).join(' · ')}</strong>
+                        </div>
+                    )}
+                    {folios.find(f => f.state === 'open') && (
+                        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-2 text-xs text-red-600 dark:text-red-400">
+                            ⚠️ Ya hay un inventario abierto: <strong>{folios.find(f => f.state === 'open')?.name}</strong>. Ciérralo antes de crear uno nuevo.
+                        </div>
+                    )}
                     <div className="flex gap-2">
-                        <button onClick={handleCreate} className="flex-1 bg-sky-500 text-white rounded-lg py-2 text-sm font-semibold">Crear</button>
-                        <button onClick={() => setCreating(false)} className="flex-1 bg-slate-100 text-slate-700 rounded-lg py-2 text-sm">Cancelar</button>
+                        <button onClick={handleCreate} disabled={!!folios.find(f => f.state === 'open')} className="flex-1 bg-sky-500 hover:bg-sky-600 disabled:opacity-40 text-white rounded-lg py-2 text-sm font-semibold">Crear</button>
+                        <button onClick={() => { setCreating(false); setAlmacen(''); setTemporada(''); }} className="flex-1 bg-slate-100 dark:bg-slate-700 dark:text-white text-slate-700 rounded-lg py-2 text-sm">Cancelar</button>
                     </div>
                 </div>
             )}

@@ -864,7 +864,7 @@ const FolioTab = ({ onJoin, onCreate, addToast, colors, catalog, sucursalId }: {
         const n = JSON.parse(localStorage.getItem('conteo:notes') || '{}');
         setNotes(n);
         setLoading(false);
-    }, []);
+    }, [sucursalId]);
 
     useEffect(() => { load(); }, [load]);
 
@@ -918,7 +918,7 @@ const FolioTab = ({ onJoin, onCreate, addToast, colors, catalog, sucursalId }: {
 
     const handleDelete = async (fid: string) => {
         if (!confirm('¿Eliminar este inventario y todos sus escaneos?')) return;
-        await fbDeleteFolio(fid);
+        await fbDeleteFolio(fid, sucursalId);
         addToast('Inventario eliminado', 'warning');
         await load();
     };

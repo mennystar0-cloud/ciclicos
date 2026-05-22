@@ -2562,7 +2562,10 @@ const SuperAdminPanel = ({ onLogout }: { onLogout: () => void }) => {
                     </div>
                 )}
             </div>
+            )}
+
             {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
+            </div>
         </div>
     );
 };

@@ -2580,10 +2580,12 @@ const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => void }) =>
                         <div className="space-y-2 max-h-64 overflow-y-auto">
                             {sucursales.map((s: any) => (
                                 <button key={s.id}
-                                    onClick={() => {
+                                    onClick={async () => {
                                         localStorage.setItem('conteo:sucursal', JSON.stringify(s));
                                         setSucursal(s);
-                                        setMode('main');
+                                        await loadOperadoresSucursal(s.id);
+                                        setOpSeleccionado(null);
+                                        setMode('operador');
                                         setError('');
                                     }}
                                     className="w-full bg-white/15 hover:bg-white/25 text-white py-4 rounded-2xl flex items-center gap-3 px-4 active:scale-95 transition-all">

@@ -7,7 +7,7 @@ import {
     fbSubscribeToSession, fbSubscribeToSessionItems, fbSubscribeToAllSessions,
     fbDeleteSession, fbGetSessionItems,
     loginSuperAdmin, fbLoginSucursal, fbGetSucursales, fbSaveSucursal,
-    fbDeleteSucursal, fbGetAllSucursalesStats, fbGetOperadores,
+    fbDeleteSucursal, fbGetAllSucursalesStats, fbGetAllFoliosDetallado, fbGetOperadores,
     fbSaveOperador, fbDeleteOperador, fbLoginOperador, hashPassword
 } from './firebase.ts';
 import type { Role, Tab, Folio, Catalog, ColorMap, Scan, StockMap } from './types.ts';
@@ -2046,7 +2046,7 @@ interface AppSession {
     sucursalId?: string;
     sucursalNombre?: string;
     operadorId?: string;
-    operadorRol?: 'scanner' | 'supervisor';
+    operadorRol?: 'scanner';
     loginAt: number;
     timeoutMs: number;
 }
@@ -2168,7 +2168,7 @@ const OperatorsPanel = ({ sucursalId, onClose, addToast }: { sucursalId: string;
     const [editOp, setEditOp]   = React.useState<any>(null);
     const [nombre, setNombre]   = React.useState('');
     const [pin, setPin]         = React.useState('');
-    const [rol, setRol]         = React.useState<'scanner'|'supervisor'>('scanner');
+    const [rol, setRol]         = React.useState<'scanner'>('scanner');
 
     const reload = async () => { setLoading(true); const list = await fbGetOperadores(sucursalId); setOps(list); setLoading(false); };
     React.useEffect(() => { reload(); }, [sucursalId]);
@@ -2220,10 +2220,9 @@ const OperatorsPanel = ({ sucursalId, onClose, addToast }: { sucursalId: string;
                             <p className="font-bold text-sm text-slate-700 dark:text-white">{editOp ? 'Editar' : 'Nuevo'} operador</p>
                             <input className="w-full border dark:border-slate-600 rounded-xl px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-white" placeholder="Nombre" value={nombre} onChange={e => setNombre(e.target.value)} maxLength={40} />
                             <input className="w-full border dark:border-slate-600 rounded-xl px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-white tracking-widest" type="password" inputMode="numeric" placeholder={editOp ? 'PIN nuevo (vacio = no cambiar)' : 'PIN 4-8 digitos'} value={pin} onChange={e => setPin(e.target.value.replace(/[^0-9]/g,'').slice(0,8))} />
-                            <select className="w-full border dark:border-slate-600 rounded-xl px-3 py-2 text-sm bg-white dark:bg-slate-700 dark:text-white" value={rol} onChange={e => setRol(e.target.value as any)}>
-                                <option value="scanner">Escaner</option>
-                                <option value="supervisor">Supervisor</option>
-                            </select>
+                            <div className="w-full border dark:border-slate-600 rounded-xl px-3 py-2 text-sm bg-slate-50 dark:bg-slate-700 dark:text-slate-400 text-slate-500">
+                                Rol: Escaner
+                            </div>
                             <div className="flex gap-2">
                                 <button onClick={handleSave} className="flex-1 bg-sky-500 text-white rounded-xl py-2 text-sm font-bold">Guardar</button>
                                 <button onClick={() => setShowForm(false)} className="flex-1 bg-slate-200 dark:bg-slate-700 dark:text-white rounded-xl py-2 text-sm">Cancelar</button>
@@ -2241,7 +2240,7 @@ const OperatorsPanel = ({ sucursalId, onClose, addToast }: { sucursalId: string;
                                     <div className="flex-1 min-w-0">
                                         <p className="font-bold text-slate-800 dark:text-white text-sm truncate">{op.nombre}</p>
                                         <div className="flex items-center gap-2 mt-0.5">
-                                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${op.rol === 'scanner' ? 'bg-sky-100 text-sky-700' : 'bg-purple-100 text-purple-700'}`}>{op.rol === 'scanner' ? 'Escaner' : 'Supervisor'}</span>
+                                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-sky-100 text-sky-700">Escaner</span>
                                             {op.ultimoLogin && <span className="text-[10px] text-slate-400">Ultimo: {new Date(op.ultimoLogin).toLocaleDateString('es-MX')}</span>}
                                         </div>
                                     </div>
@@ -2255,7 +2254,7 @@ const OperatorsPanel = ({ sucursalId, onClose, addToast }: { sucursalId: string;
                         </div>
                     )}
                     <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3 text-xs text-amber-700 dark:text-amber-400">
-                        🔐 PINs cifrados. Escaner: 8h de sesion · Supervisor: 2h · Admin: sin limite.
+                        🔐 PINs cifrados (SHA-256). Sesion de escaner: 8 horas · Admin: sin limite.
                     </div>
                     <div className="h-4" />
                 </div>
@@ -2274,6 +2273,13 @@ const SuperAdminPanel = ({ onLogout }: { onLogout: () => void }) => {
     const [usuario, setUsuario]       = React.useState('');
     const [password, setPassword]     = React.useState('');
     const [showSettings, setShowSettings] = React.useState(false);
+    const [vista, setVista]           = React.useState<'sucursales'|'reporte'>('sucursales');
+    const [foliosAll, setFoliosAll]   = React.useState<any[]>([]);
+    const [loadingRep, setLoadingRep] = React.useState(false);
+    const [filtroSuc, setFiltroSuc]   = React.useState('todas');
+    const [filtroEstado, setFiltroEstado] = React.useState('todos');
+    const [fechaDesde, setFechaDesde] = React.useState('');
+    const [fechaHasta, setFechaHasta] = React.useState('');
 
     const reload = async () => {
         setLoading(true);
@@ -2282,6 +2288,41 @@ const SuperAdminPanel = ({ onLogout }: { onLogout: () => void }) => {
         setLoading(false);
     };
     React.useEffect(() => { reload(); }, []);
+
+    const loadReporte = async () => {
+        setLoadingRep(true);
+        const list = await fbGetAllFoliosDetallado();
+        setFoliosAll(list);
+        setLoadingRep(false);
+    };
+    React.useEffect(() => { if (vista === 'reporte') loadReporte(); }, [vista]);
+
+    const foliosFiltrados = React.useMemo(() => {
+        return foliosAll.filter(f => {
+            if (filtroSuc !== 'todas' && f.sucursalId !== filtroSuc) return false;
+            if (filtroEstado !== 'todos' && f.state !== filtroEstado) return false;
+            if (fechaDesde) {
+                const desde = new Date(fechaDesde).getTime();
+                if (f.createdAt < desde) return false;
+            }
+            if (fechaHasta) {
+                const hasta = new Date(fechaHasta).getTime() + 86400000;
+                if (f.createdAt > hasta) return false;
+            }
+            return true;
+        });
+    }, [foliosAll, filtroSuc, filtroEstado, fechaDesde, fechaHasta]);
+
+    const statsReporte = React.useMemo(() => {
+        const total = foliosFiltrados.length;
+        const abiertos = foliosFiltrados.filter(f => f.state === 'open').length;
+        const cerrados = foliosFiltrados.filter(f => f.state === 'closed').length;
+        const porSucursal: Record<string, number> = {};
+        foliosFiltrados.forEach(f => {
+            porSucursal[f.sucursalNombre] = (porSucursal[f.sucursalNombre] || 0) + 1;
+        });
+        return { total, abiertos, cerrados, porSucursal };
+    }, [foliosFiltrados]);
 
     const openNew  = () => { setEditSuc(null); setNombre(''); setUsuario(''); setPassword(''); setShowForm(true); };
     const openEdit = (s: any) => { setEditSuc(s); setNombre(s.nombre); setUsuario(s.usuario); setPassword(''); setShowForm(true); };
@@ -2328,7 +2369,132 @@ const SuperAdminPanel = ({ onLogout }: { onLogout: () => void }) => {
                 </div>
             </div>
 
-            <div className="p-4 space-y-4 max-w-lg mx-auto pb-10">
+            {/* Tabs */}
+            <div className="flex border-b border-slate-800 px-4">
+                <button onClick={() => setVista('sucursales')}
+                    className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${vista === 'sucursales' ? 'border-amber-400 text-amber-400' : 'border-transparent text-slate-400 hover:text-white'}`}>
+                    🏢 Sucursales
+                </button>
+                <button onClick={() => setVista('reporte')}
+                    className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${vista === 'reporte' ? 'border-sky-400 text-sky-400' : 'border-transparent text-slate-400 hover:text-white'}`}>
+                    📊 Reporte de inventarios
+                </button>
+            </div>
+
+            <div className="p-4 space-y-4 max-w-2xl mx-auto pb-10">
+
+            {/* ── VISTA REPORTE ── */}
+            {vista === 'reporte' && (
+                <div className="space-y-4">
+                    {/* Filtros */}
+                    <div className="bg-slate-800 rounded-2xl p-4 space-y-3">
+                        <p className="text-sm font-bold text-slate-300">Filtros</p>
+                        <div className="grid grid-cols-2 gap-2">
+                            <div>
+                                <label className="text-xs text-slate-400">Sucursal</label>
+                                <select className="w-full mt-1 bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-sm text-white"
+                                    value={filtroSuc} onChange={e => setFiltroSuc(e.target.value)}>
+                                    <option value="todas">Todas</option>
+                                    {sucursales.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs text-slate-400">Estado</label>
+                                <select className="w-full mt-1 bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-sm text-white"
+                                    value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)}>
+                                    <option value="todos">Todos</option>
+                                    <option value="open">Abiertos</option>
+                                    <option value="closed">Cerrados</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs text-slate-400">Desde</label>
+                                <input type="date" className="w-full mt-1 bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-sm text-white"
+                                    value={fechaDesde} onChange={e => setFechaDesde(e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="text-xs text-slate-400">Hasta</label>
+                                <input type="date" className="w-full mt-1 bg-slate-700 border border-slate-600 rounded-xl px-3 py-2 text-sm text-white"
+                                    value={fechaHasta} onChange={e => setFechaHasta(e.target.value)} />
+                            </div>
+                        </div>
+                        <button onClick={() => { setFiltroSuc('todas'); setFiltroEstado('todos'); setFechaDesde(''); setFechaHasta(''); }}
+                            className="text-xs text-slate-400 hover:text-white underline">Limpiar filtros</button>
+                    </div>
+
+                    {/* KPIs */}
+                    {!loadingRep && (
+                        <div className="grid grid-cols-3 gap-3">
+                            <div className="bg-slate-800 rounded-2xl p-3 text-center">
+                                <p className="text-2xl font-black text-white">{statsReporte.total}</p>
+                                <p className="text-xs text-slate-400">Total inventarios</p>
+                            </div>
+                            <div className="bg-emerald-900/40 border border-emerald-800/50 rounded-2xl p-3 text-center">
+                                <p className="text-2xl font-black text-emerald-400">{statsReporte.abiertos}</p>
+                                <p className="text-xs text-emerald-500">Abiertos</p>
+                            </div>
+                            <div className="bg-slate-800 rounded-2xl p-3 text-center">
+                                <p className="text-2xl font-black text-slate-300">{statsReporte.cerrados}</p>
+                                <p className="text-xs text-slate-400">Cerrados</p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Por sucursal */}
+                    {!loadingRep && Object.keys(statsReporte.porSucursal).length > 0 && (
+                        <div className="bg-slate-800 rounded-2xl p-4 space-y-2">
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Por sucursal</p>
+                            {Object.entries(statsReporte.porSucursal).map(([nombre, count]) => (
+                                <div key={nombre} className="flex items-center gap-3">
+                                    <span className="text-sm text-white flex-1">{nombre}</span>
+                                    <div className="flex-1 bg-slate-700 rounded-full h-2">
+                                        <div className="bg-sky-500 h-2 rounded-full" style={{ width: `${Math.round((count as number / statsReporte.total) * 100)}%` }} />
+                                    </div>
+                                    <span className="text-sm font-bold text-sky-400 w-6 text-right">{count as number}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Lista de folios */}
+                    {loadingRep ? (
+                        <div className="text-center py-10 text-slate-400">Cargando inventarios...</div>
+                    ) : foliosFiltrados.length === 0 ? (
+                        <div className="text-center py-10 text-slate-500">Sin inventarios con los filtros aplicados</div>
+                    ) : (
+                        <div className="space-y-2">
+                            <p className="text-xs text-slate-400">{foliosFiltrados.length} inventario(s) encontrado(s)</p>
+                            {foliosFiltrados.map((f: any) => (
+                                <div key={f.id} className="bg-slate-800 rounded-2xl p-4 border border-slate-700">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-bold text-white text-sm truncate">{f.name}</p>
+                                            <p className="text-xs text-sky-400 mt-0.5">{f.sucursalNombre}</p>
+                                        </div>
+                                        <span className={`text-[10px] px-2 py-1 rounded-full font-bold flex-shrink-0 ${f.state === 'open' ? 'bg-emerald-900/50 text-emerald-400' : 'bg-slate-700 text-slate-400'}`}>
+                                            {f.state === 'open' ? 'Abierto' : 'Cerrado'}
+                                        </span>
+                                    </div>
+                                    <div className="mt-2 flex items-center gap-4 text-xs text-slate-400">
+                                        <span>📅 {new Date(f.createdAt).toLocaleDateString('es-MX')}</span>
+                                        {f.closedAt && <span>🔒 {new Date(f.closedAt).toLocaleDateString('es-MX')}</span>}
+                                        <span>🏪 {f.almacen}</span>
+                                        {f.temporada && <span>🗓 {f.temporada}</span>}
+                                    </div>
+                                    <div className="mt-2 flex items-center gap-4 text-xs text-slate-400">
+                                        <span>Teórico: <strong className="text-white">{Object.values(f.theoreticalMap || {}).reduce((a: any, b: any) => a + b, 0)}</strong></span>
+                                        <span>Físico: <strong className="text-emerald-400">{Object.values(f.existenciasMap || {}).reduce((a: any, b: any) => a + b, 0)}</strong></span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ── VISTA SUCURSALES ── */}
+            {vista === 'sucursales' && (
+            <div className="space-y-4">
                 <div className="flex items-center justify-between pt-2">
                     <div>
                         <h2 className="text-lg font-bold">Sucursales</h2>
@@ -2473,7 +2639,7 @@ const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => void }) =>
         }
         setLoading(false);
         if (!op) { setError('PIN incorrecto o usuario inactivo'); return; }
-        const timeoutMs = op.rol === 'scanner' ? 8*60*60*1000 : 2*60*60*1000;
+        const timeoutMs = 8*60*60*1000;
         const session: AppSession = { tipo: 'operador', nombre: op.nombre, sucursalId: sucursal.id, sucursalNombre: sucursal.nombre, operadorId: op.id, operadorRol: op.rol, loginAt: Date.now(), timeoutMs };
         saveSession(session);
         onLogin(session);
@@ -2536,7 +2702,7 @@ const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => void }) =>
                                     </div>
                                     <div className="text-left flex-1">
                                         <p className="font-bold text-sm">{op.nombre}</p>
-                                        <p className="text-white/40 text-xs">{op.rol === 'scanner' ? 'Escaner' : 'Supervisor'}</p>
+                                        <p className="text-white/40 text-xs">Escaner</p>
                                     </div>
                                     <span className="text-white/30 text-lg">→</span>
                                 </button>
@@ -2672,7 +2838,7 @@ const App: React.FC = () => {
     const [showOperators, setShowOperators] = useState(false);
 
     const sucursalId = session?.sucursalId;
-    const role: Role | null = !session ? null : session.tipo === 'admin' || session.operadorRol === 'supervisor' ? 'admin' : 'scanner';
+    const role: Role | null = !session ? null : session.tipo === 'admin' ? 'admin' : 'scanner';
 
     useEffect(() => { const p = loadUIPrefs(); applyTheme(p.dark, p.font); }, []);
 

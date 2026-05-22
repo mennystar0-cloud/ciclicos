@@ -345,3 +345,16 @@ export const fbGetAllSucursalesStats = async () => {
     }));
     return stats;
 };
+
+// ─── SUPERADMIN: folios detallados de todas las sucursales ────────────────────
+export const fbGetAllFoliosDetallado = async () => {
+    const sucursales = await fbGetSucursales();
+    const result: any[] = [];
+    await Promise.all(sucursales.map(async s => {
+        const snap = await getDocs(collection(db, 'sucursales', s.id, 'folios'));
+        snap.docs.forEach(d => {
+            result.push({ ...d.data(), sucursalNombre: s.nombre, sucursalId: s.id });
+        });
+    }));
+    return result.sort((a, b) => b.createdAt - a.createdAt);
+};

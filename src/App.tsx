@@ -1833,10 +1833,13 @@ ${ajustesSugeridos.map(a => `
     };
 
     // Simplificado: only rows that have at least 1 scan (fis > 0)
-    const simplificadoRows = useMemo(() =>
-        report.rows.filter(r => r.fis > 0).sort((a, b) => a.diff - b.diff),
-        [report.rows]
-    );
+    // Simplificado: artículos con al menos 1 escaneo, respetando el filtro activo
+    const simplificadoRows = useMemo(() => {
+        const base = filter === 'all' || filter === 'ajustes'
+            ? report.rows
+            : report.rows.filter(r => r.status === filter);
+        return base.filter(r => r.fis > 0).sort((a, b) => a.diff - b.diff);
+    }, [report.rows, filter]);
     const simplificadoMissing = simplificadoRows.filter(r => r.status === 'faltante').reduce((a, r) => a + Math.abs(r.diff), 0);
     const simplificadoSobrante = simplificadoRows.filter(r => r.status === 'sobrante').reduce((a, r) => a + r.diff, 0);
     const simplificadoOk = simplificadoRows.filter(r => r.status === 'ok').length;
@@ -1920,46 +1923,7 @@ ${ajustesSugeridos.map(a => `
                     </div>
                 )}
 
-                {/* Vista ajustes posibles */}
-                {filter === 'ajustes' && (
-                <div className="p-4 space-y-3">
-                    {ajustesSugeridos.length === 0 ? (
-                        <div className="text-center py-10 text-slate-400 dark:text-slate-500">
-                            <p className="font-medium">Sin ajustes posibles</p>
-                            <p className="text-xs mt-1">No hay sobrantes y faltantes compensables en el mismo modelo</p>
-                        </div>
-                    ) : ajustesSugeridos.map((a, i) => (
-                        <div key={i} className="bg-white dark:bg-slate-800 rounded-2xl border dark:border-slate-700 p-4 space-y-3">
-                            <div className="flex items-center justify-between">
-                                <p className="font-bold text-slate-800 dark:text-white text-sm">{a.mod}</p>
-                                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${a.tipo === 'talla' ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'}`}>
-                                    {a.tipo === 'talla' ? 'Diff. talla' : 'Diff. color'}
-                                </span>
-                            </div>
-                            <div className="grid grid-cols-3 gap-2 items-center">
-                                <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-xl p-3 text-center">
-                                    <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase">Sobrante</p>
-                                    <p className="font-bold text-emerald-700 dark:text-emerald-300 text-sm mt-1">{a.sobrante.color}</p>
-                                    <p className="text-xs text-emerald-600 dark:text-emerald-400">T{a.sobrante.talla}</p>
-                                    <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">+{a.sobrante.exceso}</p>
-                                </div>
-                                <div className="flex flex-col items-center gap-1">
-                                    <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
-                                        <RefreshCw size={14} className="text-amber-600 dark:text-amber-400" />
-                                    </div>
-                                    <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">{a.piezas} pzas</span>
-                                </div>
-                                <div className="bg-red-50 dark:bg-red-900/20 rounded-xl p-3 text-center">
-                                    <p className="text-[10px] text-red-600 dark:text-red-400 font-bold uppercase">Faltante</p>
-                                    <p className="font-bold text-red-700 dark:text-red-300 text-sm mt-1">{a.faltante.color}</p>
-                                    <p className="text-xs text-red-600 dark:text-red-400">T{a.faltante.talla}</p>
-                                    <p className="text-xs font-bold text-red-600 dark:text-red-400">-{a.faltante.falta}</p>
-                                </div>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-                )}
+
 
                 {/* Main tabla */}
                 {filter !== 'ajustes' && (
@@ -1973,7 +1937,7 @@ ${ajustesSugeridos.map(a => `
                         </tr>
                     </thead>
                     <tbody>
-                        {(printMode === 'completo' ? report.rows.sort((a, b) => a.diff - b.diff) : simplificadoRows).map((r, i) => (
+                        {(filter === 'all' ? report.rows.slice().sort((a, b) => a.diff - b.diff) : filter === 'ajustes' ? report.rows.slice().sort((a, b) => a.diff - b.diff) : filtered.slice().sort((a, b) => a.diff - b.diff)).map((r, i) => (
                             <tr key={r.vkey} className={r.status} style={{ background: i % 2 === 0 ? '#f8fafc' : 'white' }}>
                                 <td style={{ padding: '5px 8px', fontSize: 10, fontWeight: 'bold', color: '#0f172a' }}>{r.mod}</td>
                                 <td style={{ padding: '5px 8px', fontSize: 10, color: '#475569' }}>{r.color}</td>
@@ -2045,11 +2009,7 @@ ${ajustesSugeridos.map(a => `
                         <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
                             <Package size={15} /> Reporte
                         </div>
-                        {ajustesSugeridos.length > 0 && (
-                            <span className="text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded-full font-medium">
-                                {ajustesSugeridos.length} ajuste(s) posible(s)
-                            </span>
-                        )}
+
                     </div>
                 </div>
 
@@ -2219,6 +2179,47 @@ ${ajustesSugeridos.map(a => `
             </div>
             )}
 
+
+            {/* Vista ajustes posibles en pantalla */}
+            {filter === 'ajustes' && (
+            <div className="space-y-3 no-print">
+                {ajustesSugeridos.length === 0 ? (
+                    <div className="text-center py-10 text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700">
+                        <p className="font-medium">Sin ajustes posibles</p>
+                        <p className="text-xs mt-1">No hay sobrantes y faltantes compensables en el mismo modelo</p>
+                    </div>
+                ) : ajustesSugeridos.map((a, i) => (
+                    <div key={i} className="bg-white dark:bg-slate-800 rounded-2xl border dark:border-slate-700 p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                            <p className="font-bold text-slate-800 dark:text-white text-sm">{a.mod}</p>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${a.tipo === 'talla' ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'}`}>
+                                {a.tipo === 'talla' ? 'Dif. talla' : 'Dif. color'}
+                            </span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 items-center">
+                            <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-xl p-3 text-center">
+                                <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase">Sobrante</p>
+                                <p className="font-bold text-emerald-700 dark:text-emerald-300 text-sm mt-1">{a.sobrante.color}</p>
+                                <p className="text-xs text-emerald-600 dark:text-emerald-400">T{a.sobrante.talla}</p>
+                                <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">+{a.sobrante.exceso}</p>
+                            </div>
+                            <div className="flex flex-col items-center gap-1">
+                                <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                                    <RefreshCw size={14} className="text-amber-600 dark:text-amber-400" />
+                                </div>
+                                <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">{a.piezas} pzas</span>
+                            </div>
+                            <div className="bg-red-50 dark:bg-red-900/20 rounded-xl p-3 text-center">
+                                <p className="text-[10px] text-red-600 dark:text-red-400 font-bold uppercase">Faltante</p>
+                                <p className="font-bold text-red-700 dark:text-red-300 text-sm mt-1">{a.faltante.color}</p>
+                                <p className="text-xs text-red-600 dark:text-red-400">T{a.faltante.talla}</p>
+                                <p className="text-xs font-bold text-red-600 dark:text-red-400">-{a.faltante.falta}</p>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+            )}
             {/* Rows list */}
             {vista === 'reporte' && (
             <div className="space-y-1 no-print">

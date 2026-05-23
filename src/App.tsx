@@ -1488,6 +1488,7 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
     onTabChange: (t: Tab) => void; addToast: (m: string, t?: ToastType) => void;
 }) => {
     const [filter, setFilter] = useState<'all' | 'faltante' | 'sobrante' | 'ok' | 'parcial' | 'ajustes'>('all');
+    const [searchMod, setSearchMod] = useState('');
     const [expandedKey, setExpandedKey] = useState<string | null>(null);
     const [printMode, setPrintMode] = useState<'completo' | 'simplificado'>('completo');
     const [vista, setVista] = useState<'reporte' | 'ajustes'>('reporte');
@@ -1516,16 +1517,19 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
         };
     }, [folio, scans]);
 
-    const top5 = useMemo(() => report.rows.filter(r => r.status === 'faltante').sort((a, b) => a.diff - b.diff).slice(0, 5), [report.rows]);
     const areaChart = useMemo(() => {
         const map: { [a: string]: number } = {};
         scans.forEach(s => { map[s.area] = (map[s.area] || 0) + 1; });
         return Object.entries(map).map(([area, count]) => ({ area, count })).sort((a, b) => b.count - a.count);
     }, [scans]);
     const filtered = useMemo(() => report.rows.filter(r => {
-        if (filter === 'all') return true;
-        return r.status === filter;
-    }), [report.rows, filter]);
+        if (filter !== 'all' && filter !== 'ajustes' && r.status !== filter) return false;
+        if (searchMod.trim()) {
+            const q = searchMod.trim().toLowerCase();
+            return r.mod.toLowerCase().includes(q) || r.color.toLowerCase().includes(q);
+        }
+        return true;
+    }), [report.rows, filter, searchMod]);
 
     const ajustesSugeridos = useMemo(() => {
         if (!folio) return [];
@@ -1925,6 +1929,32 @@ ${ajustesSugeridos.map(a => `
 
 
 
+                {/* Buscador de modelo */}
+                {filter !== 'ajustes' && (
+                <div className="px-3 py-2 border-b dark:border-slate-700">
+                    <div className="relative">
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                            className="w-full pl-8 pr-8 py-2 text-sm bg-slate-50 dark:bg-slate-800 border dark:border-slate-600 rounded-xl focus:outline-none focus:border-sky-400 dark:text-white placeholder-slate-400"
+                            placeholder="Buscar modelo o color..."
+                            value={searchMod}
+                            onChange={e => setSearchMod(e.target.value)}
+                        />
+                        {searchMod && (
+                            <button onClick={() => setSearchMod('')}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-lg leading-none">
+                                ×
+                            </button>
+                        )}
+                    </div>
+                    {searchMod && (
+                        <p className="text-xs text-slate-400 mt-1 px-1">
+                            {filtered.length} resultado(s) para <strong className="text-slate-600 dark:text-slate-300">"{searchMod}"</strong>
+                        </p>
+                    )}
+                </div>
+                )}
+
                 {/* Main tabla */}
                 {filter !== 'ajustes' && (
                 <div>
@@ -1980,12 +2010,7 @@ ${ajustesSugeridos.map(a => `
                 </div>
             </div>
 
-            {top5.length > 0 && (
-                <div className="bg-red-50 rounded-xl p-4 border border-red-200 no-print">
-                    <p className="text-xs font-bold text-red-700 uppercase mb-2">Top 5 Faltantes</p>
-                    {top5.map(r => <div key={r.vkey} className="flex justify-between text-xs py-1 border-b border-red-100 last:border-0"><span className="text-red-700">{r.mod} · {r.color} · {r.talla}</span><span className="font-bold text-red-600">{r.diff}</span></div>)}
-                </div>
-            )}
+
 
             {areaChart.length > 0 && (
                 <div className="bg-white rounded-xl p-4 shadow-sm border no-print">
@@ -2024,7 +2049,7 @@ ${ajustesSugeridos.map(a => `
                             { key: 'ok',       label: 'OK',       count: report.rows.filter(r => r.status === 'ok').length,         color: 'text-slate-400',  active: 'border-slate-500 text-slate-600' },
                             { key: 'ajustes',  label: 'Ajustes',  count: ajustesSugeridos.length,                                  color: 'text-amber-500',  active: 'border-amber-500 text-amber-600' },
                         ] as const).map(({ key, label, count, color, active }) => (
-                            <button key={key} onClick={() => setFilter(key as any)}
+                            <button key={key} onClick={() => { setFilter(key as any); setSearchMod(''); }}
                                 className={`flex-shrink-0 flex flex-col items-center px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors ${
                                     filter === key
                                         ? active

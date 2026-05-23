@@ -1513,14 +1513,129 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
 
     const handlePrint = (mode: 'completo' | 'simplificado') => {
         setPrintMode(mode);
-        if (!document.getElementById('print-styles')) {
-            const style = document.createElement('style');
-            style.id = 'print-styles';
-            style.innerHTML = PRINT_STYLES;
-            document.head.appendChild(style);
+
+        // Determinar qué filas imprimir según filtro activo
+        const rowsToPrint = mode === 'simplificado'
+            ? simplificadoRows
+            : filter === 'all'
+                ? report.rows.sort((a, b) => a.diff - b.diff)
+                : filtered.sort((a, b) => a.diff - b.diff);
+
+        const filterLabel: Record<string, string> = {
+            all: 'Completo', faltante: 'Faltantes', sobrante: 'Sobrantes',
+            ok: 'Sin diferencia', parcial: 'Parciales'
+        };
+        const titulo = mode === 'simplificado' ? 'Reporte Simplificado' : `Reporte — ${filterLabel[filter]}`;
+
+        const totalTeo = rowsToPrint.reduce((a, r) => a + r.teo, 0);
+        const totalFis = rowsToPrint.reduce((a, r) => a + r.fis, 0);
+        const totalDiff = totalFis - totalTeo;
+
+        const statusColor = (s: string) => {
+            if (s === 'faltante') return '#fef2f2';
+            if (s === 'sobrante') return '#f0fdf4';
+            if (s === 'parcial')  return '#fffbeb';
+            return '#ffffff';
+        };
+        const statusLabel = (s: string, diff: number) => {
+            if (s === 'faltante') return `Faltante (${diff})`;
+            if (s === 'sobrante') return `Sobrante (+${diff})`;
+            if (s === 'parcial')  return `Parcial (${diff})`;
+            return 'OK';
+        };
+
+        const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<title>${titulo} — ${folio?.name}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 11px; color: #1e293b; padding: 20px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #1e293b; padding-bottom: 10px; margin-bottom: 14px; }
+  .header h1 { font-size: 16px; font-weight: bold; }
+  .header p { font-size: 10px; color: #64748b; margin-top: 2px; }
+  .kpis { display: flex; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+  .kpi { border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 14px; text-align: center; min-width: 80px; }
+  .kpi .val { font-size: 18px; font-weight: bold; }
+  .kpi .lbl { font-size: 9px; color: #64748b; margin-top: 2px; }
+  .kpi.red .val { color: #dc2626; }
+  .kpi.green .val { color: #16a34a; }
+  .kpi.blue .val { color: #2563eb; }
+  table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  th { background: #1e293b; color: white; padding: 6px 8px; text-align: left; font-size: 10px; }
+  td { padding: 5px 8px; border-bottom: 1px solid #f1f5f9; }
+  tr.faltante td { background: #fef2f2; }
+  tr.sobrante td { background: #f0fdf4; }
+  tr.parcial td  { background: #fffbeb; }
+  .total-row td { font-weight: bold; background: #f8fafc; border-top: 2px solid #e2e8f0; }
+  .footer { margin-top: 16px; font-size: 9px; color: #94a3b8; text-align: center; }
+  @page { size: A4 portrait; margin: 1.5cm; }
+  @media print { body { padding: 0; } }
+</style>
+</head>
+<body>
+<div class="header">
+  <div>
+    <h1>${titulo}</h1>
+    <p>${folio?.name} &nbsp;·&nbsp; ${folio?.almacen} &nbsp;·&nbsp; ${folio?.temporada || ''}</p>
+    <p>${new Date().toLocaleString('es-MX', { dateStyle: 'long', timeStyle: 'short' })}</p>
+  </div>
+  <div style="text-align:right">
+    <p style="font-size:10px;color:#64748b">Conteo Cíclico Pro v4.0</p>
+    <p style="font-size:10px;color:#64748b">${rowsToPrint.length} artículos</p>
+  </div>
+</div>
+<div class="kpis">
+  <div class="kpi blue"><div class="val">${totalTeo}</div><div class="lbl">Teórico</div></div>
+  <div class="kpi blue"><div class="val">${totalFis}</div><div class="lbl">Físico</div></div>
+  <div class="kpi ${totalDiff < 0 ? 'red' : totalDiff > 0 ? 'green' : ''}">
+    <div class="val">${totalDiff > 0 ? '+' : ''}${totalDiff}</div><div class="lbl">Diferencia</div>
+  </div>
+  <div class="kpi red"><div class="val">${rowsToPrint.filter(r => r.status === 'faltante').length}</div><div class="lbl">SKU Faltantes</div></div>
+  <div class="kpi green"><div class="val">${rowsToPrint.filter(r => r.status === 'sobrante').length}</div><div class="lbl">SKU Sobrantes</div></div>
+</div>
+<table>
+  <thead>
+    <tr>
+      <th>Modelo</th><th>Color</th><th>Talla</th>
+      <th style="text-align:center">Teórico</th>
+      <th style="text-align:center">Físico</th>
+      <th style="text-align:center">Diferencia</th>
+      <th>Estado</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${rowsToPrint.map(r => `
+    <tr class="${r.status}">
+      <td>${r.mod}</td>
+      <td>${r.color}</td>
+      <td>${r.talla}</td>
+      <td style="text-align:center">${r.teo}</td>
+      <td style="text-align:center">${r.fis}</td>
+      <td style="text-align:center;font-weight:bold;color:${r.diff < 0 ? '#dc2626' : r.diff > 0 ? '#16a34a' : '#64748b'}">${r.diff > 0 ? '+' : ''}${r.diff}</td>
+      <td>${statusLabel(r.status, r.diff)}</td>
+    </tr>`).join('')}
+    <tr class="total-row">
+      <td colspan="3">TOTAL</td>
+      <td style="text-align:center">${totalTeo}</td>
+      <td style="text-align:center">${totalFis}</td>
+      <td style="text-align:center;font-weight:bold;color:${totalDiff < 0 ? '#dc2626' : totalDiff > 0 ? '#16a34a' : '#64748b'}">${totalDiff > 0 ? '+' : ''}${totalDiff}</td>
+      <td></td>
+    </tr>
+  </tbody>
+</table>
+<div class="footer">Generado por Conteo Cíclico Pro v4.0 · ${new Date().toLocaleDateString('es-MX')}</div>
+</body>
+</html>`;
+
+        const win = window.open('', '_blank');
+        if (win) {
+            win.document.write(html);
+            win.document.close();
+            win.focus();
+            setTimeout(() => { win.print(); }, 300);
         }
-        // Small delay so React renders the correct printMode before printing
-        setTimeout(() => window.print(), 80);
     };
 
     // Simplificado: only rows that have at least 1 scan (fis > 0)

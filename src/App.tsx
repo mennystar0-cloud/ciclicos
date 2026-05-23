@@ -5,7 +5,7 @@ import {
     fbSubscribeToScans, fbSaveSettings, fbLoadSettings, fbGetFullDump,
     fbRestoreFullDump, fbCreateScanSession, fbAddSessionScan,
     fbSubscribeToSession, fbSubscribeToSessionItems, fbSubscribeToAllSessions,
-    fbDeleteSession, fbGetSessionItems,
+    fbDeleteSession, fbGetSessionItems, fbGetAllSessions,
     loginSuperAdmin, fbLoginSucursal, fbGetSucursales, fbSaveSucursal,
     fbDeleteSucursal, fbGetAllSucursalesStats, fbGetAllFoliosDetallado, fbGetOperadores,
     fbSaveOperador, fbDeleteOperador, fbLoginOperador, hashPassword

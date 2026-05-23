@@ -255,7 +255,7 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
         } catch {}
     }, [soundOn]);
 
-    const doStartSession = async (area: string, operator: string, opId?: string) => {
+    const doStartSession = async (area: string, operator: string, opId?: string): Promise<string> => {
         setLoading(true);
         const prevId = localStorage.getItem('conteo:sessionId');
         if (prevId) { await fbDeleteSession(prevId, sucursalId).catch(() => {}); }
@@ -276,6 +276,7 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
         setLoading(false);
         setPhase('scanning');
         addToast('Sesion iniciada en ' + session.area, 'success');
+        return id;
     };
 
     const startNewSession = async () => {
@@ -298,11 +299,11 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
             }
         }
 
-        await doStartSession(newArea.trim(), operatorName, appSession?.operadorId);
+        const newId = await doStartSession(newArea.trim(), operatorName, appSession?.operadorId);
 
         // subscribe
-        fbSubscribeToSession(id, (s) => { if (s) setCurrentSession(s as ScanSession); });
-        fbSubscribeToSessionItems(id, (items) => setSessionItems(items as SessionItem[]));
+        fbSubscribeToSession(newId, (s) => { if (s) setCurrentSession(s as ScanSession); }, sucursalId ?? undefined);
+        fbSubscribeToSessionItems(newId, (items) => setSessionItems(items as SessionItem[]), sucursalId ?? undefined);
 
         setTimeout(() => inputRef.current?.focus(), 300);
     };
@@ -536,11 +537,14 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
                     <button
                         onClick={async () => {
                             setShowConflict(false);
-                            await doStartSession(
+                            const cId = await doStartSession(
                                 newArea.trim() || conflictSession?.area || '',
                                 appSession?.nombre || newOperator.trim(),
                                 appSession?.operadorId
                             );
+                            fbSubscribeToSession(cId, (s) => { if (s) setCurrentSession(s as ScanSession); }, sucursalId ?? undefined);
+                            fbSubscribeToSessionItems(cId, (items) => setSessionItems(items as SessionItem[]), sucursalId ?? undefined);
+                            setTimeout(() => inputRef.current?.focus(), 300);
                         }}
                         className="w-full bg-sky-500 hover:bg-sky-400 text-white py-3 rounded-xl font-bold active:scale-95"
                     >

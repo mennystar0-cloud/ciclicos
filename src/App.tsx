@@ -2794,6 +2794,37 @@ const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => void }) =>
                     </div>
                 )}
 
+
+                {/* PIN */}
+                {mode === 'pin' && (
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-3 mb-2">
+                            <button onClick={() => { setMode(sucursal ? 'operador' : 'main'); setError(''); setOpSeleccionado(null); }} className="text-white/60 hover:text-white text-xl">←</button>
+                            <div>
+                                {opSeleccionado ? (
+                                    <>
+                                        <p className="text-white font-bold">{opSeleccionado.nombre}</p>
+                                        <p className="text-white/50 text-xs">Ingresa tu PIN de acceso</p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <p className="text-white font-bold">Ingresa tu PIN</p>
+                                        <p className="text-white/50 text-xs">4 a 8 digitos numericos</p>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                        {opSeleccionado && (
+                            <div className="flex items-center justify-center gap-3 py-2">
+                                <div className="w-14 h-14 rounded-full bg-sky-500/30 flex items-center justify-center">
+                                    <span className="text-sky-200 font-bold text-xl">{opSeleccionado.nombre.slice(0,2).toUpperCase()}</span>
+                                </div>
+                            </div>
+                        )}
+                        <PinKeyboard onSubmit={handlePin} loading={loading} error={error} />
+                    </div>
+                )}
+
                 {/* ADMIN SUCURSAL */}
                 {mode === 'admin' && (
                     <div className="space-y-4">

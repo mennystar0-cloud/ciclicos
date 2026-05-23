@@ -1938,18 +1938,17 @@ ${ajustesSugeridos.map(a => `
             <div className="bg-white rounded-xl border shadow-sm overflow-hidden no-print">
 
                 {/* Fila 1: Vista */}
-                <div className="grid grid-cols-2 divide-x border-b">
-                    <button onClick={() => setVista('reporte')} className={`flex items-center justify-center gap-2 py-3 text-sm font-semibold transition-colors ${vista === 'reporte' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>
-                        <Package size={15} /> Reporte
-                    </button>
-                    <button onClick={() => setVista('ajustes')} className={`relative flex items-center justify-center gap-2 py-3 text-sm font-semibold transition-colors ${vista === 'ajustes' ? 'bg-amber-500 text-white' : 'text-amber-600 hover:bg-amber-50'}`}>
-                        <AlertTriangle size={15} /> Ajustes posibles
+                <div className="border-b">
+                    <div className="flex items-center justify-between px-4 py-3">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                            <Package size={15} /> Reporte
+                        </div>
                         {ajustesSugeridos.length > 0 && (
-                            <span className="absolute top-2 right-3 bg-red-500 text-white text-[9px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
-                                {ajustesSugeridos.length}
+                            <span className="text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded-full font-medium">
+                                {ajustesSugeridos.length} ajuste(s) posible(s)
                             </span>
                         )}
-                    </button>
+                    </div>
                 </div>
 
                 {/* Fila 2: Filtros — solo en vista reporte */}
@@ -2014,52 +2013,47 @@ ${ajustesSugeridos.map(a => `
 
                             {/* Opciones */}
                             <div className="mt-2">
-                                {/* Imprimir filtro activo */}
-                                <button
-                                    onClick={() => { setShowPrintModal(false); handlePrint('completo'); }}
-                                    className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-b dark:border-slate-700">
-                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                                        filter === 'faltante' ? 'bg-red-50 dark:bg-red-900/20' :
-                                        filter === 'sobrante' ? 'bg-emerald-50 dark:bg-emerald-900/20' :
-                                        'bg-slate-100 dark:bg-slate-700'}`}>
-                                        <Printer size={20} className={
-                                            filter === 'faltante' ? 'text-red-500' :
-                                            filter === 'sobrante' ? 'text-emerald-500' :
-                                            'text-slate-500'} />
-                                    </div>
-                                    <div className="flex-1 text-left">
-                                        <p className="text-sm font-semibold text-slate-800 dark:text-white">
-                                            {filter === 'all' ? 'Reporte completo' :
-                                             filter === 'faltante' ? 'Imprimir faltantes' :
-                                             filter === 'sobrante' ? 'Imprimir sobrantes' :
-                                             filter === 'ok' ? 'Imprimir sin diferencia' : 'Imprimir parciales'}
-                                        </p>
-                                        <p className="text-xs text-slate-400 mt-0.5">
-                                            {filter === 'all' ? 'Todos los artículos' : `${filtered.length} artículo(s) · respeta el filtro activo`}
-                                        </p>
-                                    </div>
-                                    <ChevronRight size={16} className="text-slate-300" />
-                                </button>
-
-                                {/* Reporte completo (si hay filtro activo) */}
+                                    {/* Opción 1: Lo que ves ahora (solo si hay filtro) */}
                                 {filter !== 'all' && (
-                                    <button
-                                        onClick={() => { setShowPrintModal(false); setFilter('all'); setTimeout(() => handlePrint('completo'), 100); }}
+                                    <button onClick={() => { setShowPrintModal(false); handlePrint('completo'); }}
                                         className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-b dark:border-slate-700">
-                                        <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center flex-shrink-0">
-                                            <FileText size={20} className="text-slate-500" />
+                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                                            filter === 'faltante' ? 'bg-red-50 dark:bg-red-900/20' :
+                                            filter === 'sobrante' ? 'bg-emerald-50 dark:bg-emerald-900/20' :
+                                            filter === 'ok' ? 'bg-sky-50 dark:bg-sky-900/20' :
+                                            'bg-amber-50 dark:bg-amber-900/20'}`}>
+                                            <Printer size={20} className={
+                                                filter === 'faltante' ? 'text-red-500' :
+                                                filter === 'sobrante' ? 'text-emerald-500' :
+                                                filter === 'ok' ? 'text-sky-500' : 'text-amber-500'} />
                                         </div>
                                         <div className="flex-1 text-left">
-                                            <p className="text-sm font-semibold text-slate-800 dark:text-white">Reporte completo</p>
-                                            <p className="text-xs text-slate-400 mt-0.5">{report.rows.length} artículos · sin filtro</p>
+                                            <p className="text-sm font-semibold text-slate-800 dark:text-white">
+                                                {filter === 'faltante' ? 'Imprimir faltantes' :
+                                                 filter === 'sobrante' ? 'Imprimir sobrantes' :
+                                                 filter === 'ok' ? 'Imprimir sin diferencia' : 'Imprimir parciales'}
+                                            </p>
+                                            <p className="text-xs text-slate-400 mt-0.5">{filtered.length} artículo(s) · filtro activo</p>
                                         </div>
                                         <ChevronRight size={16} className="text-slate-300" />
                                     </button>
                                 )}
 
-                                {/* Simplificado */}
-                                <button
-                                    onClick={() => { setShowPrintModal(false); handlePrint('simplificado'); }}
+                                {/* Opción 2: Reporte completo — siempre disponible */}
+                                <button onClick={() => { setShowPrintModal(false); const prev = filter; setFilter('all'); setTimeout(() => handlePrint('completo'), 80); }}
+                                    className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-b dark:border-slate-700">
+                                    <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center flex-shrink-0">
+                                        <FileText size={20} className="text-slate-600 dark:text-slate-300" />
+                                    </div>
+                                    <div className="flex-1 text-left">
+                                        <p className="text-sm font-semibold text-slate-800 dark:text-white">Reporte completo</p>
+                                        <p className="text-xs text-slate-400 mt-0.5">{report.rows.length} artículos · sin filtro</p>
+                                    </div>
+                                    <ChevronRight size={16} className="text-slate-300" />
+                                </button>
+
+                                {/* Opción 3: Simplificado — siempre disponible */}
+                                <button onClick={() => { setShowPrintModal(false); handlePrint('simplificado'); }}
                                     className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-b dark:border-slate-700">
                                     <div className="w-10 h-10 rounded-xl bg-sky-50 dark:bg-sky-900/20 flex items-center justify-center flex-shrink-0">
                                         <FileText size={20} className="text-sky-500" />
@@ -2071,23 +2065,23 @@ ${ajustesSugeridos.map(a => `
                                     <ChevronRight size={16} className="text-slate-300" />
                                 </button>
 
-                                {/* Ajustes posibles */}
-                                <button
-                                    onClick={() => { setShowPrintModal(false); handlePrint('ajustes'); }}
-                                    className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-b dark:border-slate-700">
-                                    <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center flex-shrink-0">
-                                        <RefreshCw size={20} className="text-amber-500" />
-                                    </div>
-                                    <div className="flex-1 text-left">
-                                        <p className="text-sm font-semibold text-slate-800 dark:text-white">Ajustes posibles</p>
-                                        <p className="text-xs text-slate-400 mt-0.5">{ajustesSugeridos.length} movimiento(s) sugerido(s) entre sobrantes y faltantes</p>
-                                    </div>
-                                    <ChevronRight size={16} className="text-slate-300" />
-                                </button>
+                                {/* Opción 4: Ajustes posibles — solo si los hay */}
+                                {ajustesSugeridos.length > 0 && (
+                                    <button onClick={() => { setShowPrintModal(false); handlePrint('ajustes'); }}
+                                        className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-b dark:border-slate-700">
+                                        <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center flex-shrink-0">
+                                            <RefreshCw size={20} className="text-amber-500" />
+                                        </div>
+                                        <div className="flex-1 text-left">
+                                            <p className="text-sm font-semibold text-slate-800 dark:text-white">Ajustes posibles</p>
+                                            <p className="text-xs text-slate-400 mt-0.5">{ajustesSugeridos.length} movimiento(s) sugerido(s) entre sobrantes y faltantes</p>
+                                        </div>
+                                        <ChevronRight size={16} className="text-slate-300" />
+                                    </button>
+                                )}
 
-                                {/* CSV */}
-                                <button
-                                    onClick={() => { setShowPrintModal(false); exportCSV(); }}
+                                {/* Opción 5: CSV — siempre disponible */}
+                                <button onClick={() => { setShowPrintModal(false); exportCSV(); }}
                                     className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                                     <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center flex-shrink-0">
                                         <Download size={20} className="text-emerald-500" />

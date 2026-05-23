@@ -78,6 +78,7 @@ interface ScanSession {
     sucursalId?: string;
     createdAt: any;
     count: number;
+    lastSeen?: number;
 }
 interface SessionItem {
     id: string;
@@ -230,7 +231,6 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
     useEffect(() => {
         const savedId = localStorage.getItem('conteo:sessionId');
         if (savedId) {
-            // subscribe to existing session
             const unsub = fbSubscribeToSession(savedId, (s) => {
                 if (s) setCurrentSession(s as ScanSession);
             }, sucursalId ?? undefined);
@@ -241,6 +241,24 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
             return () => { unsub(); unsubItems(); };
         }
     }, [sucursalId]);
+
+    // Heartbeat: actualiza lastSeen cada 30 segundos para presencia en tiempo real
+    useEffect(() => {
+        if (!currentSession) return;
+        const updateLastSeen = async () => {
+            try {
+                const { doc, updateDoc } = await import('firebase/firestore');
+                const { db } = await import('./firebase.ts');
+                const ref = sucursalId
+                    ? doc(db, 'sucursales', sucursalId, 'scanSessions', currentSession.id)
+                    : doc(db, 'scanSessions', currentSession.id);
+                await updateDoc(ref, { lastSeen: Date.now() });
+            } catch {}
+        };
+        updateLastSeen(); // Actualizar inmediatamente al iniciar
+        const interval = setInterval(updateLastSeen, 30000); // Cada 30s
+        return () => clearInterval(interval);
+    }, [currentSession?.id, sucursalId]);
 
     const playBeep = useCallback((ok: boolean) => {
         if (!soundOn) return;
@@ -267,7 +285,8 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
             operadorId: opId ?? appSession?.operadorId,
             deviceId,
             sucursalId: sucursalId ?? appSession?.sucursalId,
-            createdAt: Date.now(), count: 0
+            createdAt: Date.now(), count: 0,
+            lastSeen: Date.now(),
         };
         await fbCreateScanSession(session);
         localStorage.setItem('conteo:sessionId', id);
@@ -781,23 +800,38 @@ const SessionsAdminTab = ({ addToast, sucursalId }: { addToast: (m: string, t?: 
         }
     };
 
+    const INACTIVE_THRESHOLD = 2 * 60 * 1000; // 2 minutos
+    const now = Date.now();
+    const activeSessions = sessions.filter(s =>
+        !s.lastSeen || (now - s.lastSeen) < INACTIVE_THRESHOLD
+    );
+    const inactiveSessions = sessions.filter(s =>
+        s.lastSeen && (now - s.lastSeen) >= INACTIVE_THRESHOLD
+    );
+
     return (
         <div className="space-y-4">
             <div className="flex items-center gap-2">
                 <Wifi size={16} className="text-emerald-500" />
-                <h2 className="font-bold text-slate-800">Sesiones de Escáner</h2>
-                <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold ml-auto">En tiempo real</span>
+                <h2 className="font-bold text-slate-800 dark:text-white">Sesiones de Escáner</h2>
+                <div className="ml-auto flex items-center gap-2">
+                    {activeSessions.length > 0 && (
+                        <span className="text-xs bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 px-2 py-0.5 rounded-full font-bold">
+                            {activeSessions.length} activa(s)
+                        </span>
+                    )}
+                </div>
             </div>
 
-            {sessions.length === 0 && (
+            {activeSessions.length === 0 && (
                 <div className="text-center py-12 text-slate-400">
                     <Users className="w-12 h-12 mx-auto mb-2 opacity-30" />
-                    <p>Sin sesiones activas</p>
-                    <p className="text-sm">Cuando un scanner inicie un escaneo aparecerá aquí</p>
+                    <p className="font-medium">Sin sesiones activas</p>
+                    <p className="text-sm mt-1">Cuando un scanner inicie un escaneo aparecerá aquí</p>
                 </div>
             )}
 
-            {sessions.map(session => (
+            {activeSessions.map(session => (
                 <div key={session.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
                     <div className="p-4">
                         <div className="flex justify-between items-start">
@@ -1405,6 +1439,29 @@ const ScanTab = ({ folio, catalog, colors, scans, role, addToast }: {
                 <label className="text-xs text-slate-500 font-semibold uppercase">Operador</label>
                 <input className="w-full border rounded-lg p-2 text-sm mt-1" value={user} onChange={e => { setUser(e.target.value); localStorage.setItem('conteo:user', e.target.value); }} />
             </div>
+            {/* Sesiones inactivas */}
+            {inactiveSessions.length > 0 && (
+                <div className="space-y-2 mt-2">
+                    <p className="text-xs text-slate-400 dark:text-slate-500 uppercase font-bold tracking-wider">
+                        Inactivas · sin actividad hace más de 2 min ({inactiveSessions.length})
+                    </p>
+                    {inactiveSessions.map(s => (
+                        <div key={s.id} className="bg-slate-50 dark:bg-slate-800/50 rounded-xl border dark:border-slate-700 p-3 flex items-center gap-3 opacity-60">
+                            <div className="w-2 h-2 rounded-full bg-slate-400 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-slate-600 dark:text-slate-400 truncate">{s.operator} · {s.area}</p>
+                                <p className="text-xs text-slate-400">
+                                    Sin actividad hace {Math.round((now - (s.lastSeen || 0)) / 60000)} min · {s.count} escaneos
+                                </p>
+                            </div>
+                            <button onClick={() => deleteSession(s.id)}
+                                className="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded-lg">
+                                Limpiar
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 };
@@ -1430,7 +1487,7 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
     folio: Folio | null; scans: Scan[];
     onTabChange: (t: Tab) => void; addToast: (m: string, t?: ToastType) => void;
 }) => {
-    const [filter, setFilter] = useState<'all' | 'faltante' | 'sobrante' | 'ok' | 'parcial'>('all');
+    const [filter, setFilter] = useState<'all' | 'faltante' | 'sobrante' | 'ok' | 'parcial' | 'ajustes'>('all');
     const [expandedKey, setExpandedKey] = useState<string | null>(null);
     const [printMode, setPrintMode] = useState<'completo' | 'simplificado'>('completo');
     const [vista, setVista] = useState<'reporte' | 'ajustes'>('reporte');
@@ -1863,7 +1920,50 @@ ${ajustesSugeridos.map(a => `
                     </div>
                 )}
 
-                {/* Main table */}
+                {/* Vista ajustes posibles */}
+                {filter === 'ajustes' && (
+                <div className="p-4 space-y-3">
+                    {ajustesSugeridos.length === 0 ? (
+                        <div className="text-center py-10 text-slate-400 dark:text-slate-500">
+                            <p className="font-medium">Sin ajustes posibles</p>
+                            <p className="text-xs mt-1">No hay sobrantes y faltantes compensables en el mismo modelo</p>
+                        </div>
+                    ) : ajustesSugeridos.map((a, i) => (
+                        <div key={i} className="bg-white dark:bg-slate-800 rounded-2xl border dark:border-slate-700 p-4 space-y-3">
+                            <div className="flex items-center justify-between">
+                                <p className="font-bold text-slate-800 dark:text-white text-sm">{a.mod}</p>
+                                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${a.tipo === 'talla' ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'}`}>
+                                    {a.tipo === 'talla' ? 'Diff. talla' : 'Diff. color'}
+                                </span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2 items-center">
+                                <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-xl p-3 text-center">
+                                    <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase">Sobrante</p>
+                                    <p className="font-bold text-emerald-700 dark:text-emerald-300 text-sm mt-1">{a.sobrante.color}</p>
+                                    <p className="text-xs text-emerald-600 dark:text-emerald-400">T{a.sobrante.talla}</p>
+                                    <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">+{a.sobrante.exceso}</p>
+                                </div>
+                                <div className="flex flex-col items-center gap-1">
+                                    <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                                        <RefreshCw size={14} className="text-amber-600 dark:text-amber-400" />
+                                    </div>
+                                    <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">{a.piezas} pzas</span>
+                                </div>
+                                <div className="bg-red-50 dark:bg-red-900/20 rounded-xl p-3 text-center">
+                                    <p className="text-[10px] text-red-600 dark:text-red-400 font-bold uppercase">Faltante</p>
+                                    <p className="font-bold text-red-700 dark:text-red-300 text-sm mt-1">{a.faltante.color}</p>
+                                    <p className="text-xs text-red-600 dark:text-red-400">T{a.faltante.talla}</p>
+                                    <p className="text-xs font-bold text-red-600 dark:text-red-400">-{a.faltante.falta}</p>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+                )}
+
+                {/* Main tabla */}
+                {filter !== 'ajustes' && (
+                <>
                 <table>
                     <thead>
                         <tr>
@@ -1951,26 +2051,29 @@ ${ajustesSugeridos.map(a => `
                     </div>
                 </div>
 
-                {/* Fila 2: Filtros — solo en vista reporte */}
-                {vista === 'reporte' && (
+                {/* Filtros */}
                 <div className="border-b">
                     <div className="flex overflow-x-auto">
                         {([
-                            { key: 'all',      label: 'Todos',     count: report.rows.length,                                          color: 'text-slate-700' },
-                            { key: 'faltante', label: 'Faltante',  count: report.rows.filter(r => r.status === 'faltante').length,     color: 'text-red-500' },
-                            { key: 'parcial',  label: 'Parcial',   count: report.rows.filter(r => r.status === 'parcial').length,      color: 'text-orange-500' },
-                            { key: 'sobrante', label: 'Sobrante',  count: report.rows.filter(r => r.status === 'sobrante').length,     color: 'text-emerald-600' },
-                            { key: 'ok',       label: 'OK',        count: report.rows.filter(r => r.status === 'ok').length,           color: 'text-slate-400' },
-                        ] as const).map(({ key, label, count, color }) => (
+                            { key: 'all',      label: 'Todos',    count: report.rows.length,                                        color: 'text-slate-600 dark:text-slate-300', active: 'border-slate-800 dark:border-slate-200 text-slate-800 dark:text-white' },
+                            { key: 'faltante', label: 'Faltante', count: report.rows.filter(r => r.status === 'faltante').length,   color: 'text-red-500',    active: 'border-red-500 text-red-600' },
+                            { key: 'sobrante', label: 'Sobrante', count: report.rows.filter(r => r.status === 'sobrante').length,   color: 'text-emerald-500',active: 'border-emerald-500 text-emerald-600' },
+                            { key: 'parcial',  label: 'Parcial',  count: report.rows.filter(r => r.status === 'parcial').length,    color: 'text-orange-500', active: 'border-orange-500 text-orange-600' },
+                            { key: 'ok',       label: 'OK',       count: report.rows.filter(r => r.status === 'ok').length,         color: 'text-slate-400',  active: 'border-slate-500 text-slate-600' },
+                            { key: 'ajustes',  label: 'Ajustes',  count: ajustesSugeridos.length,                                  color: 'text-amber-500',  active: 'border-amber-500 text-amber-600' },
+                        ] as const).map(({ key, label, count, color, active }) => (
                             <button key={key} onClick={() => setFilter(key as any)}
-                                className={`flex-shrink-0 flex flex-col items-center px-4 py-2 text-xs font-semibold border-b-2 transition-colors ${filter === key ? 'border-slate-800 text-slate-800' : `border-transparent ${color} hover:bg-slate-50`}`}>
-                                <span className="text-base font-bold">{count}</span>
+                                className={`flex-shrink-0 flex flex-col items-center px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors ${
+                                    filter === key
+                                        ? active
+                                        : `border-transparent ${color} hover:bg-slate-50 dark:hover:bg-slate-800`
+                                }`}>
+                                <span className="text-sm font-bold">{count}</span>
                                 <span>{label}</span>
                             </button>
                         ))}
                     </div>
                 </div>
-                )}
 
                 {/* Botón único Imprimir / Exportar */}
                 <div className="border-t">
@@ -2013,46 +2116,37 @@ ${ajustesSugeridos.map(a => `
 
                             {/* Opciones */}
                             <div className="mt-2">
-                                    {/* Opción 1: Lo que ves ahora (solo si hay filtro) */}
-                                {filter !== 'all' && (
-                                    <button onClick={() => { setShowPrintModal(false); handlePrint('completo'); }}
-                                        className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-b dark:border-slate-700">
-                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                                            filter === 'faltante' ? 'bg-red-50 dark:bg-red-900/20' :
-                                            filter === 'sobrante' ? 'bg-emerald-50 dark:bg-emerald-900/20' :
-                                            filter === 'ok' ? 'bg-sky-50 dark:bg-sky-900/20' :
-                                            'bg-amber-50 dark:bg-amber-900/20'}`}>
-                                            <Printer size={20} className={
-                                                filter === 'faltante' ? 'text-red-500' :
-                                                filter === 'sobrante' ? 'text-emerald-500' :
-                                                filter === 'ok' ? 'text-sky-500' : 'text-amber-500'} />
-                                        </div>
-                                        <div className="flex-1 text-left">
-                                            <p className="text-sm font-semibold text-slate-800 dark:text-white">
-                                                {filter === 'faltante' ? 'Imprimir faltantes' :
-                                                 filter === 'sobrante' ? 'Imprimir sobrantes' :
-                                                 filter === 'ok' ? 'Imprimir sin diferencia' : 'Imprimir parciales'}
-                                            </p>
-                                            <p className="text-xs text-slate-400 mt-0.5">{filtered.length} artículo(s) · filtro activo</p>
-                                        </div>
-                                        <ChevronRight size={16} className="text-slate-300" />
-                                    </button>
-                                )}
+                                    {/* Indicador de lo que se imprimirá */}
+                                <div className="mx-5 mb-2 bg-slate-50 dark:bg-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-500 dark:text-slate-400">
+                                    Vista activa: <strong className="text-slate-700 dark:text-slate-200">{
+                                        filter === 'all' ? `Todos (${report.rows.length})` :
+                                        filter === 'faltante' ? `Faltantes (${filtered.length})` :
+                                        filter === 'sobrante' ? `Sobrantes (${filtered.length})` :
+                                        filter === 'ok' ? `OK (${filtered.length})` :
+                                        filter === 'parcial' ? `Parciales (${filtered.length})` :
+                                        `Ajustes posibles (${ajustesSugeridos.length})`
+                                    }</strong>
+                                </div>
 
-                                {/* Opción 2: Reporte completo — siempre disponible */}
-                                <button onClick={() => { setShowPrintModal(false); const prev = filter; setFilter('all'); setTimeout(() => handlePrint('completo'), 80); }}
+                                {/* Opción 1: Completo — imprime lo que está viendo */}
+                                <button onClick={() => { setShowPrintModal(false); handlePrint(filter === 'ajustes' ? 'ajustes' : 'completo'); }}
                                     className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-b dark:border-slate-700">
                                     <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center flex-shrink-0">
-                                        <FileText size={20} className="text-slate-600 dark:text-slate-300" />
+                                        <Printer size={20} className="text-slate-600 dark:text-slate-300" />
                                     </div>
                                     <div className="flex-1 text-left">
-                                        <p className="text-sm font-semibold text-slate-800 dark:text-white">Reporte completo</p>
-                                        <p className="text-xs text-slate-400 mt-0.5">{report.rows.length} artículos · sin filtro</p>
+                                        <p className="text-sm font-semibold text-slate-800 dark:text-white">Completo</p>
+                                        <p className="text-xs text-slate-400 mt-0.5">
+                                            {filter === 'ajustes' ? `${ajustesSugeridos.length} ajuste(s) con espacio para observaciones` :
+                                             filter === 'all' ? `${report.rows.length} artículos` :
+                                             `${filtered.length} artículos del filtro activo`}
+                                        </p>
                                     </div>
                                     <ChevronRight size={16} className="text-slate-300" />
                                 </button>
 
-                                {/* Opción 3: Simplificado — siempre disponible */}
+                                {/* Opción 2: Simplificado — solo si no es ajustes */}
+                                {filter !== 'ajustes' && (
                                 <button onClick={() => { setShowPrintModal(false); handlePrint('simplificado'); }}
                                     className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-b dark:border-slate-700">
                                     <div className="w-10 h-10 rounded-xl bg-sky-50 dark:bg-sky-900/20 flex items-center justify-center flex-shrink-0">
@@ -2064,23 +2158,9 @@ ${ajustesSugeridos.map(a => `
                                     </div>
                                     <ChevronRight size={16} className="text-slate-300" />
                                 </button>
-
-                                {/* Opción 4: Ajustes posibles — solo si los hay */}
-                                {ajustesSugeridos.length > 0 && (
-                                    <button onClick={() => { setShowPrintModal(false); handlePrint('ajustes'); }}
-                                        className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-b dark:border-slate-700">
-                                        <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center flex-shrink-0">
-                                            <RefreshCw size={20} className="text-amber-500" />
-                                        </div>
-                                        <div className="flex-1 text-left">
-                                            <p className="text-sm font-semibold text-slate-800 dark:text-white">Ajustes posibles</p>
-                                            <p className="text-xs text-slate-400 mt-0.5">{ajustesSugeridos.length} movimiento(s) sugerido(s) entre sobrantes y faltantes</p>
-                                        </div>
-                                        <ChevronRight size={16} className="text-slate-300" />
-                                    </button>
                                 )}
 
-                                {/* Opción 5: CSV — siempre disponible */}
+                                {/* Opción 3: Exportar CSV */}
                                 <button onClick={() => { setShowPrintModal(false); exportCSV(); }}
                                     className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                                     <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center flex-shrink-0">

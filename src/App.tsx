@@ -306,6 +306,7 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
         } catch (err) {
             setLoading(false);
             addToast('Error al iniciar sesion. Intenta de nuevo.', 'error');
+            alert('Error: ' + ((err as any)?.message || String(err)));
             console.error('startNewSession error:', err);
         }
     };

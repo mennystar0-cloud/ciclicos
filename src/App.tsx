@@ -2003,6 +2003,8 @@ ${ajustesSugeridos.map(a => `
                     <span>{printDate}</span>
                 </div>
             </div>
+                </>
+                )}
 
             {/* ── SCREEN UI ── */}
             <div className="grid grid-cols-2 gap-3 no-print">

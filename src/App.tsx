@@ -2596,8 +2596,10 @@ const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => void }) =>
     };
 
     const loadOperadoresSucursal = async (sucursalId: string) => {
+        setLoading(true);
         const list = await fbGetOperadores(sucursalId);
         setOperadores(list.filter((o: any) => o.activo));
+        setLoading(false);
     };
 
     const handleAdminLogin = async () => {
@@ -2686,35 +2688,52 @@ const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => void }) =>
                             <button onClick={() => { setMode('main'); setError(''); setOpSeleccionado(null); }} className="text-white/60 hover:text-white text-xl">←</button>
                             <div>
                                 <p className="text-white font-bold">¿Quién eres?</p>
-                                <p className="text-white/50 text-xs">Selecciona tu nombre</p>
+                                <p className="text-white/50 text-xs">{sucursal?.nombre} · Selecciona tu nombre</p>
                             </div>
                         </div>
-                        {operadores.length === 0 && (
-                            <div className="text-center py-6 space-y-2">
-                                <p className="text-white/50 text-sm">No hay operadores registrados.</p>
-                                <p className="text-white/30 text-xs">El admin debe crear operadores primero.</p>
+
+                        {loading && (
+                            <div className="text-center py-6">
+                                <p className="text-white/50 text-sm">Cargando operadores...</p>
                             </div>
                         )}
-                        <div className="space-y-2 max-h-72 overflow-y-auto">
-                            {operadores.map((op: any) => (
-                                <button key={op.id}
-                                    onClick={() => { setOpSeleccionado(op); setMode('pin'); setError(''); }}
-                                    className="w-full bg-white/15 hover:bg-white/25 text-white py-3 rounded-2xl flex items-center gap-3 px-4 active:scale-95 transition-all">
-                                    <div className="w-10 h-10 rounded-full bg-sky-500/30 flex items-center justify-center flex-shrink-0">
-                                        <span className="text-sky-200 font-bold text-sm">{op.nombre.slice(0,2).toUpperCase()}</span>
-                                    </div>
-                                    <div className="text-left flex-1">
-                                        <p className="font-bold text-sm">{op.nombre}</p>
-                                        <p className="text-white/40 text-xs">Escaner</p>
-                                    </div>
-                                    <span className="text-white/30 text-lg">→</span>
+
+                        {!loading && operadores.length === 0 && (
+                            <div className="text-center py-6 space-y-3">
+                                <div className="text-4xl">👤</div>
+                                <p className="text-white/60 text-sm font-medium">Sin operadores registrados</p>
+                                <p className="text-white/30 text-xs">El admin debe crear operadores primero desde el panel 👥</p>
+                                <button onClick={() => { setOpSeleccionado(null); setMode('pin'); setError(''); }}
+                                    className="w-full bg-white/10 hover:bg-white/20 text-white/70 py-3 rounded-xl text-sm font-medium mt-2">
+                                    Entrar sin identificarme
                                 </button>
-                            ))}
-                        </div>
-                        <button onClick={() => { setOpSeleccionado(null); setMode('pin'); setError(''); }}
-                            className="w-full bg-white/8 hover:bg-white/15 text-white/50 py-2.5 rounded-xl text-xs text-center">
-                            Entrar sin identificarme
-                        </button>
+                            </div>
+                        )}
+
+                        {!loading && operadores.length > 0 && (
+                            <>
+                                <div className="space-y-2 max-h-72 overflow-y-auto">
+                                    {operadores.map((op: any) => (
+                                        <button key={op.id}
+                                            onClick={() => { setOpSeleccionado(op); setMode('pin'); setError(''); }}
+                                            className="w-full bg-white/15 hover:bg-white/25 text-white py-3 rounded-2xl flex items-center gap-3 px-4 active:scale-95 transition-all">
+                                            <div className="w-10 h-10 rounded-full bg-sky-500/30 flex items-center justify-center flex-shrink-0">
+                                                <span className="text-sky-200 font-bold text-sm">{op.nombre.slice(0,2).toUpperCase()}</span>
+                                            </div>
+                                            <div className="text-left flex-1">
+                                                <p className="font-bold text-sm">{op.nombre}</p>
+                                                <p className="text-white/40 text-xs">Escaner</p>
+                                            </div>
+                                            <span className="text-white/40 text-xl">→</span>
+                                        </button>
+                                    ))}
+                                </div>
+                                <button onClick={() => { setOpSeleccionado(null); setMode('pin'); setError(''); }}
+                                    className="w-full bg-white/10 hover:bg-white/20 text-white/60 py-2.5 rounded-xl text-xs text-center border border-white/10">
+                                    Entrar sin identificarme
+                                </button>
+                            </>
+                        )}
                     </div>
                 )}
 

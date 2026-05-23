@@ -47,7 +47,6 @@ const X = (p: any) => <Icon {...p} d="M18 6L6 18M6 6l12 12" />;
 const MapPin = (p: any) => <Icon {...p} d={['M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z','M12 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z']} />;
 const Package = (p: any) => <Icon {...p} d={['M16.5 9.4l-9-5.19M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z','M3.27 6.96L12 12.01l8.73-5.05','M12 22.08V12']} />;
 const ChevronDown = (p: any) => <Icon {...p} d="M6 9l6 6 6-6" />;
-const ChevronUp = (p: any) => <Icon {...p} d="M18 15l-6-6-6 6" />;
 const BookOpen = (p: any) => <Icon {...p} d={['M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z','M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z']} />;
 const Zap = (p: any) => <Icon {...p} d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />;
 const Timer = (p: any) => <Icon {...p} d={['M12 22a9 9 0 1 0 0-18 9 9 0 0 0 0 18z','M12 6v6l4 2','M9.5 2h5','M12 2v3']} />;

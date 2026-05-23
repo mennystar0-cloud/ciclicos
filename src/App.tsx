@@ -1963,7 +1963,7 @@ ${ajustesSugeridos.map(a => `
 
                 {/* Main tabla */}
                 {filter !== 'ajustes' && (
-                <>
+                <div>
                 <table>
                     <thead>
                         <tr>
@@ -2002,9 +2002,9 @@ ${ajustesSugeridos.map(a => `
                     <span>{printMode === 'simplificado' ? `SKUs escaneados: ${simplificadoRows.length}` : `Total SKUs: ${report.rows.length}`} · Escaneos: {scans.length}</span>
                     <span>{printDate}</span>
                 </div>
-            </div>
-                </>
+                </div>
                 )}
+            </div>
 
             {/* ── SCREEN UI ── */}
             <div className="grid grid-cols-2 gap-3 no-print">

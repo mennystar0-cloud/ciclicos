@@ -231,14 +231,14 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
             // subscribe to existing session
             const unsub = fbSubscribeToSession(savedId, (s) => {
                 if (s) setCurrentSession(s as ScanSession);
-            });
+            }, sucursalId ?? undefined);
             const unsubItems = fbSubscribeToSessionItems(savedId, (items) => {
                 setSessionItems(items as SessionItem[]);
-            });
+            }, sucursalId ?? undefined);
             setPhase('scanning');
             return () => { unsub(); unsubItems(); };
         }
-    }, []);
+    }, [sucursalId]);
 
     const playBeep = useCallback((ok: boolean) => {
         if (!soundOn) return;
@@ -335,7 +335,7 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
             recognized, mod, color, talla, vkey
         };
 
-        await fbAddSessionScan(currentSession.id, scanItem);
+        await fbAddSessionScan(currentSession.id, scanItem, sucursalId ?? undefined);
 
         // Actualizar existenciasMap del folio activo para que el Reporte cuadre
         if (recognized && folio && folio.state === 'open') {
@@ -352,6 +352,7 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
                 user: currentSession.operator,
                 ts: scanItem.ts,
                 category: item?.category,
+                sucursalId: sucursalId ?? undefined,
             };
             await fbAddScan(scan);
         }
@@ -375,12 +376,17 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
         // delete last item from subcollection
         const last = sessionItems[0];
         try {
-            const { getFirestore, doc, deleteDoc } = await import('firebase/firestore');
+            const { doc, deleteDoc } = await import('firebase/firestore');
             const { db } = await import('./firebase.ts');
-            await deleteDoc(doc(db, 'scanSessions', currentSession.id, 'items', last.id));
+            const sessionPath = sucursalId
+                ? doc(db, 'sucursales', sucursalId, 'scanSessions', currentSession.id, 'items', last.id)
+                : doc(db, 'scanSessions', currentSession.id, 'items', last.id);
+            await deleteDoc(sessionPath);
             // update count en sesión
             const { setDoc, getDoc } = await import('firebase/firestore');
-            const ref = doc(db, 'scanSessions', currentSession.id);
+            const ref = sucursalId
+                ? doc(db, 'sucursales', sucursalId, 'scanSessions', currentSession.id)
+                : doc(db, 'scanSessions', currentSession.id);
             const snap = await getDoc(ref);
             if (snap.exists()) {
                 await setDoc(ref, { ...snap.data(), count: Math.max(0, (snap.data().count || 1) - 1) });
@@ -679,7 +685,7 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
 };
 
 // ─── SESSIONS ADMIN TAB ───────────────────────────────────────────────────────
-const SessionsAdminTab = ({ addToast }: { addToast: (m: string, t?: ToastType) => void }) => {
+const SessionsAdminTab = ({ addToast, sucursalId }: { addToast: (m: string, t?: ToastType) => void; sucursalId?: string }) => {
     const [sessions, setSessions] = useState<ScanSession[]>([]);
     const [expanded, setExpanded] = useState<string | null>(null);
     const [items, setItems] = useState<{ [id: string]: SessionItem[] }>({});
@@ -687,9 +693,9 @@ const SessionsAdminTab = ({ addToast }: { addToast: (m: string, t?: ToastType) =
     const [syncing, setSyncing] = useState<string | null>(null);
 
     useEffect(() => {
-        const unsub = fbSubscribeToAllSessions((s) => setSessions(s as ScanSession[]));
+        const unsub = fbSubscribeToAllSessions((s) => setSessions(s as ScanSession[]), sucursalId);
         return () => unsub();
-    }, []);
+    }, [sucursalId]);
 
     // Nota: Las sesiones se muestran desde la colección scanSessions (flujo ScannerSessionTab)
     // El ScanTab principal registra scans directo en el folio — ver pestaña Reporte para cruce completo
@@ -697,7 +703,7 @@ const SessionsAdminTab = ({ addToast }: { addToast: (m: string, t?: ToastType) =
     const loadItems = async (sessionId: string) => {
         if (items[sessionId]) { setExpanded(expanded === sessionId ? null : sessionId); return; }
         setLoadingItems(sessionId);
-        const data = await fbGetSessionItems(sessionId);
+        const data = await fbGetSessionItems(sessionId, sucursalId);
         setItems(prev => ({ ...prev, [sessionId]: data as SessionItem[] }));
         setLoadingItems(null);
         setExpanded(sessionId);
@@ -721,7 +727,7 @@ const SessionsAdminTab = ({ addToast }: { addToast: (m: string, t?: ToastType) =
 
     const deleteSession = async (sessionId: string) => {
         if (!confirm('¿Eliminar esta sesión?')) return;
-        await fbDeleteSession(sessionId);
+        await fbDeleteSession(sessionId, sucursalId);
         addToast('Sesión eliminada', 'info');
     };
 
@@ -3031,7 +3037,7 @@ const App: React.FC = () => {
                     {activeTab === 'folio'       && role === 'admin'   && <FolioTab onJoin={(id) => { setFolioId(id); setActiveTab('reporte'); }} onCreate={(id) => setFolioId(id)} addToast={addToast} colors={colors} catalog={catalog} sucursalId={sucursalId ?? undefined} />}
                     {activeTab === 'existencias' && role === 'admin'   && <StockTab folioId={folioId} catalog={catalog} colors={colors} onUpdate={() => {}} addToast={addToast} sucursalId={sucursalId ?? undefined} />}
                     {activeTab === 'escanear'    && role === 'scanner' && <ScannerSessionTab colors={colors} catalog={catalog} folio={folio} addToast={addToast} appSession={session} sucursalId={sucursalId ?? undefined} />}
-                    {activeTab === 'sesiones'    && role === 'admin'   && <SessionsAdminTab addToast={addToast} />}
+                    {activeTab === 'sesiones'    && role === 'admin'   && <SessionsAdminTab addToast={addToast} sucursalId={sucursalId ?? undefined} />}
                     {activeTab === 'reporte'     && role === 'admin'   && <ReportTab folio={folio} scans={scans} onTabChange={handleTabChange} addToast={addToast} />}
                     {activeTab === 'consulta'    && role === 'admin'   && <QueryTab folio={folio} scans={scans} />}
                     {activeTab === 'historial'   && role === 'admin'   && <HistoryTab scans={scans} folioId={folioId} folio={folio} onDataChange={() => {}} addToast={addToast} />}

@@ -1511,15 +1511,123 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
         addToast('CSV exportado', 'success');
     };
 
-    const handlePrint = (mode: 'completo' | 'simplificado') => {
-        setPrintMode(mode);
+    const printAjustes = () => {
+        if (!folio) return;
+        const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<title>Ajustes Posibles — ${folio?.name}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 11px; color: #1e293b; padding: 24px; }
+  .header { border-bottom: 3px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: flex-start; }
+  .logo { font-size: 18px; font-weight: 900; color: #0f172a; }
+  .sub { font-size: 10px; color: #64748b; margin-top: 4px; }
+  .badge { display: inline-block; background: #f59e0b; color: white; font-size: 9px; font-weight: bold; padding: 2px 8px; border-radius: 10px; margin-left: 8px; vertical-align: middle; }
+  .section-title { font-size: 13px; font-weight: bold; margin: 16px 0 8px; padding-left: 8px; border-left: 4px solid #f59e0b; color: #0f172a; }
+  .ajuste-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 10px; page-break-inside: avoid; }
+  .ajuste-card .mod { font-size: 13px; font-weight: bold; color: #0f172a; margin-bottom: 6px; }
+  .ajuste-card .tipo { display: inline-block; font-size: 9px; font-weight: bold; padding: 2px 6px; border-radius: 10px; margin-left: 6px; }
+  .tipo-talla { background: #dbeafe; color: #1d4ed8; }
+  .tipo-color { background: #f3e8ff; color: #7e22ce; }
+  .ajuste-row { display: flex; gap: 16px; align-items: center; margin-top: 6px; }
+  .ajuste-box { flex: 1; border-radius: 6px; padding: 8px 12px; }
+  .sobrante-box { background: #f0fdf4; border: 1px solid #bbf7d0; }
+  .faltante-box { background: #fef2f2; border: 1px solid #fecaca; }
+  .ajuste-box .label { font-size: 9px; font-weight: bold; color: #64748b; text-transform: uppercase; }
+  .ajuste-box .value { font-size: 12px; font-weight: bold; margin-top: 2px; }
+  .sobrante-box .value { color: #16a34a; }
+  .faltante-box .value { color: #dc2626; }
+  .arrow { font-size: 18px; color: #94a3b8; flex-shrink: 0; }
+  .piezas { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px 10px; font-size: 10px; text-align: center; flex-shrink: 0; }
+  .piezas strong { font-size: 13px; display: block; }
+  .obs { margin-top: 8px; border-top: 1px dashed #e2e8f0; padding-top: 8px; }
+  .obs-label { font-size: 9px; color: #94a3b8; text-transform: uppercase; font-weight: bold; margin-bottom: 4px; }
+  .obs-line { border-bottom: 1px solid #e2e8f0; margin-bottom: 6px; height: 14px; }
+  .footer { margin-top: 24px; font-size: 9px; color: #94a3b8; text-align: center; border-top: 1px solid #f1f5f9; padding-top: 8px; }
+  .resumen { display: flex; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+  .res-box { border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 14px; text-align: center; }
+  .res-box .val { font-size: 16px; font-weight: bold; color: #f59e0b; }
+  .res-box .lbl { font-size: 9px; color: #64748b; }
+  @page { size: A4 portrait; margin: 1.5cm; }
+</style>
+</head>
+<body>
+<div class="header">
+  <div>
+    <div class="logo">Conteo Cíclico Pro <span class="badge">AJUSTES POSIBLES</span></div>
+    <div class="sub">${folio?.name} &nbsp;·&nbsp; ${folio?.almacen} &nbsp;·&nbsp; ${folio?.temporada || ''}</div>
+    <div class="sub">${new Date().toLocaleString('es-MX', { dateStyle: 'long', timeStyle: 'short' })}</div>
+  </div>
+  <div style="text-align:right">
+    <div class="sub">v4.0 · Multi-Sucursal</div>
+  </div>
+</div>
+
+<div class="resumen">
+  <div class="res-box"><div class="val">${ajustesSugeridos.length}</div><div class="lbl">Ajustes posibles</div></div>
+  <div class="res-box"><div class="val">${ajustesSugeridos.filter(a => a.tipo === 'talla').length}</div><div class="lbl">Por talla</div></div>
+  <div class="res-box"><div class="val">${ajustesSugeridos.filter(a => a.tipo === 'color').length}</div><div class="lbl">Por color</div></div>
+  <div class="res-box"><div class="val">${ajustesSugeridos.reduce((a, s) => a + s.piezas, 0)}</div><div class="lbl">Piezas a mover</div></div>
+</div>
+
+<div class="section-title">Ajustes sugeridos</div>
+${ajustesSugeridos.map(a => `
+<div class="ajuste-card">
+  <div class="mod">
+    ${a.mod}
+    <span class="tipo ${a.tipo === 'talla' ? 'tipo-talla' : 'tipo-color'}">
+      ${a.tipo === 'talla' ? 'Diferencia de talla' : 'Diferencia de color'}
+    </span>
+  </div>
+  <div class="ajuste-row">
+    <div class="ajuste-box sobrante-box">
+      <div class="label">Sobrante</div>
+      <div class="value">${a.sobrante.color} T${a.sobrante.talla}</div>
+      <div style="font-size:10px;color:#16a34a">+${a.sobrante.exceso} pieza(s)</div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="ajuste-box faltante-box">
+      <div class="label">Faltante</div>
+      <div class="value">${a.faltante.color} T${a.faltante.talla}</div>
+      <div style="font-size:10px;color:#dc2626">${a.faltante.falta} pieza(s)</div>
+    </div>
+    <div class="piezas">
+      <strong>${a.piezas}</strong>
+      mover
+    </div>
+  </div>
+  <div class="obs">
+    <div class="obs-label">Observaciones</div>
+    <div class="obs-line"></div>
+    <div class="obs-line"></div>
+  </div>
+</div>`).join('')}
+
+<div class="footer">
+  Conteo Cíclico Pro v4.0 · Generado el ${new Date().toLocaleDateString('es-MX')} · ${ajustesSugeridos.length} ajuste(s) sugerido(s)
+</div>
+</body>
+</html>`;
+        const win = window.open('', '_blank');
+        if (win) { win.document.write(html); win.document.close(); win.focus(); setTimeout(() => win.print(), 300); }
+    };
+
+    const handlePrint = (mode: 'completo' | 'simplificado' | 'ajustes') => {
+        setPrintMode(mode === 'ajustes' ? 'completo' : mode);
+
+        if (mode === 'ajustes') {
+            printAjustes();
+            return;
+        }
 
         // Determinar qué filas imprimir según filtro activo
         const rowsToPrint = mode === 'simplificado'
             ? simplificadoRows
             : filter === 'all'
-                ? report.rows.sort((a, b) => a.diff - b.diff)
-                : filtered.sort((a, b) => a.diff - b.diff);
+                ? [...report.rows].sort((a, b) => a.diff - b.diff)
+                : [...filtered].sort((a, b) => a.diff - b.diff);
 
         const filterLabel: Record<string, string> = {
             all: 'Completo', faltante: 'Faltantes', sobrante: 'Sobrantes',
@@ -1551,25 +1659,37 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
 <title>${titulo} — ${folio?.name}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; font-size: 11px; color: #1e293b; padding: 20px; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #1e293b; padding-bottom: 10px; margin-bottom: 14px; }
-  .header h1 { font-size: 16px; font-weight: bold; }
-  .header p { font-size: 10px; color: #64748b; margin-top: 2px; }
-  .kpis { display: flex; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+  body { font-family: Arial, sans-serif; font-size: 11px; color: #1e293b; padding: 24px; }
+  .header { border-bottom: 3px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: flex-start; }
+  .logo { font-size: 18px; font-weight: 900; color: #0f172a; }
+  .logo-sub { font-size: 10px; color: #64748b; margin-top: 3px; }
+  .badge { display: inline-block; font-size: 9px; font-weight: bold; padding: 2px 8px; border-radius: 10px; margin-left: 8px; vertical-align: middle; }
+  .badge-all { background: #1e293b; color: white; }
+  .badge-faltante { background: #fee2e2; color: #dc2626; }
+  .badge-sobrante { background: #dcfce7; color: #16a34a; }
+  .badge-ok { background: #dbeafe; color: #2563eb; }
+  .badge-parcial { background: #fef3c7; color: #d97706; }
+  .badge-simplificado { background: #f3e8ff; color: #7e22ce; }
+  .kpis { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
   .kpi { border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 14px; text-align: center; min-width: 80px; }
-  .kpi .val { font-size: 18px; font-weight: bold; }
-  .kpi .lbl { font-size: 9px; color: #64748b; margin-top: 2px; }
+  .kpi .val { font-size: 17px; font-weight: bold; }
+  .kpi .lbl { font-size: 9px; color: #64748b; margin-top: 1px; }
   .kpi.red .val { color: #dc2626; }
   .kpi.green .val { color: #16a34a; }
   .kpi.blue .val { color: #2563eb; }
   table { width: 100%; border-collapse: collapse; margin-top: 4px; }
-  th { background: #1e293b; color: white; padding: 6px 8px; text-align: left; font-size: 10px; }
-  td { padding: 5px 8px; border-bottom: 1px solid #f1f5f9; }
-  tr.faltante td { background: #fef2f2; }
-  tr.sobrante td { background: #f0fdf4; }
-  tr.parcial td  { background: #fffbeb; }
-  .total-row td { font-weight: bold; background: #f8fafc; border-top: 2px solid #e2e8f0; }
-  .footer { margin-top: 16px; font-size: 9px; color: #94a3b8; text-align: center; }
+  th { background: #0f172a; color: white; padding: 7px 8px; text-align: left; font-size: 10px; font-weight: bold; }
+  td { padding: 6px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  tr.faltante td { background: #fef2f2 !important; }
+  tr.sobrante td { background: #f0fdf4 !important; }
+  tr.parcial td  { background: #fffbeb !important; }
+  .total-row td { font-weight: bold; background: #f1f5f9 !important; border-top: 2px solid #e2e8f0; }
+  .obs-cell { color: #d1d5db; font-style: italic; font-size: 9px; min-width: 120px; border-bottom: 1px dashed #d1d5db; }
+  .diff-neg { color: #dc2626; font-weight: bold; }
+  .diff-pos { color: #16a34a; font-weight: bold; }
+  .diff-zero { color: #64748b; }
+  .footer { margin-top: 20px; font-size: 9px; color: #94a3b8; text-align: center; border-top: 1px solid #f1f5f9; padding-top: 8px; }
   @page { size: A4 portrait; margin: 1.5cm; }
   @media print { body { padding: 0; } }
 </style>
@@ -1577,15 +1697,19 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
 <body>
 <div class="header">
   <div>
-    <h1>${titulo}</h1>
-    <p>${folio?.name} &nbsp;·&nbsp; ${folio?.almacen} &nbsp;·&nbsp; ${folio?.temporada || ''}</p>
-    <p>${new Date().toLocaleString('es-MX', { dateStyle: 'long', timeStyle: 'short' })}</p>
+    <div class="logo">
+      Conteo Cíclico Pro
+      <span class="badge badge-${mode === 'simplificado' ? 'simplificado' : filter}">${titulo}</span>
+    </div>
+    <div class="logo-sub">${folio?.name} &nbsp;·&nbsp; ${folio?.almacen} &nbsp;·&nbsp; ${folio?.temporada || ''}</div>
+    <div class="logo-sub">${new Date().toLocaleString('es-MX', { dateStyle: 'long', timeStyle: 'short' })}</div>
   </div>
   <div style="text-align:right">
-    <p style="font-size:10px;color:#64748b">Conteo Cíclico Pro v4.0</p>
-    <p style="font-size:10px;color:#64748b">${rowsToPrint.length} artículos</p>
+    <div class="logo-sub">v4.0 · Multi-Sucursal</div>
+    <div class="logo-sub">${rowsToPrint.length} artículo(s)</div>
   </div>
 </div>
+
 <div class="kpis">
   <div class="kpi blue"><div class="val">${totalTeo}</div><div class="lbl">Teórico</div></div>
   <div class="kpi blue"><div class="val">${totalFis}</div><div class="lbl">Físico</div></div>
@@ -1594,38 +1718,48 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
   </div>
   <div class="kpi red"><div class="val">${rowsToPrint.filter(r => r.status === 'faltante').length}</div><div class="lbl">SKU Faltantes</div></div>
   <div class="kpi green"><div class="val">${rowsToPrint.filter(r => r.status === 'sobrante').length}</div><div class="lbl">SKU Sobrantes</div></div>
+  <div class="kpi"><div class="val">${Math.round((totalFis / Math.max(totalTeo, 1)) * 100)}%</div><div class="lbl">Cobertura</div></div>
 </div>
+
 <table>
   <thead>
     <tr>
-      <th>Modelo</th><th>Color</th><th>Talla</th>
+      <th>Modelo</th>
+      <th>Color</th>
+      <th style="text-align:center">Talla</th>
       <th style="text-align:center">Teórico</th>
       <th style="text-align:center">Físico</th>
       <th style="text-align:center">Diferencia</th>
       <th>Estado</th>
+      <th>Observaciones</th>
     </tr>
   </thead>
   <tbody>
     ${rowsToPrint.map(r => `
     <tr class="${r.status}">
-      <td>${r.mod}</td>
+      <td style="font-weight:600">${r.mod}</td>
       <td>${r.color}</td>
-      <td>${r.talla}</td>
+      <td style="text-align:center">${r.talla}</td>
       <td style="text-align:center">${r.teo}</td>
       <td style="text-align:center">${r.fis}</td>
-      <td style="text-align:center;font-weight:bold;color:${r.diff < 0 ? '#dc2626' : r.diff > 0 ? '#16a34a' : '#64748b'}">${r.diff > 0 ? '+' : ''}${r.diff}</td>
+      <td style="text-align:center" class="${r.diff < 0 ? 'diff-neg' : r.diff > 0 ? 'diff-pos' : 'diff-zero'}">${r.diff > 0 ? '+' : ''}${r.diff}</td>
       <td>${statusLabel(r.status, r.diff)}</td>
+      <td class="obs-cell">___________________________</td>
     </tr>`).join('')}
     <tr class="total-row">
-      <td colspan="3">TOTAL</td>
-      <td style="text-align:center">${totalTeo}</td>
-      <td style="text-align:center">${totalFis}</td>
-      <td style="text-align:center;font-weight:bold;color:${totalDiff < 0 ? '#dc2626' : totalDiff > 0 ? '#16a34a' : '#64748b'}">${totalDiff > 0 ? '+' : ''}${totalDiff}</td>
+      <td colspan="3" style="font-weight:bold">TOTAL</td>
+      <td style="text-align:center;font-weight:bold">${totalTeo}</td>
+      <td style="text-align:center;font-weight:bold">${totalFis}</td>
+      <td style="text-align:center" class="${totalDiff < 0 ? 'diff-neg' : totalDiff > 0 ? 'diff-pos' : 'diff-zero'}">${totalDiff > 0 ? '+' : ''}${totalDiff}</td>
+      <td></td>
       <td></td>
     </tr>
   </tbody>
 </table>
-<div class="footer">Generado por Conteo Cíclico Pro v4.0 · ${new Date().toLocaleDateString('es-MX')}</div>
+
+<div class="footer">
+  Conteo Cíclico Pro v4.0 &nbsp;·&nbsp; ${new Date().toLocaleDateString('es-MX')} &nbsp;·&nbsp; ${rowsToPrint.length} artículo(s) &nbsp;·&nbsp; Firmado: ________________
+</div>
 </body>
 </html>`;
 
@@ -1837,15 +1971,32 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
                 )}
 
                 {/* Fila 3: Exportar */}
-                <div className="grid grid-cols-3 divide-x">
-                    <button onClick={() => handlePrint('completo')} className="flex flex-col items-center gap-0.5 py-3 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
-                        <span className="text-base">🖨️</span> Completo
+                <div className="grid grid-cols-2 divide-x border-t">
+                    <button onClick={() => handlePrint('completo')}
+                        className="flex flex-col items-center gap-0.5 py-3 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                        <span className="text-base">🖨️</span>
+                        <span>Imprimir</span>
+                        <span className="text-[10px] text-slate-400">{filter === 'all' ? 'Completo' : filter === 'faltante' ? 'Faltantes' : filter === 'sobrante' ? 'Sobrantes' : filter === 'ok' ? 'Sin diferencia' : 'Parciales'}</span>
                     </button>
-                    <button onClick={() => handlePrint('simplificado')} className="flex flex-col items-center gap-0.5 py-3 text-xs font-semibold text-sky-600 hover:bg-sky-50 transition-colors">
-                        <span className="text-base">📋</span> Simplificado
+                    <button onClick={() => handlePrint('simplificado')}
+                        className="flex flex-col items-center gap-0.5 py-3 text-xs font-semibold text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/20 transition-colors">
+                        <span className="text-base">📋</span>
+                        <span>Simplificado</span>
+                        <span className="text-[10px] text-sky-400">Solo escaneados</span>
                     </button>
-                    <button onClick={exportCSV} className="flex flex-col items-center gap-0.5 py-3 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
-                        <Download size={16} /> CSV
+                </div>
+                <div className="grid grid-cols-2 divide-x border-t">
+                    <button onClick={() => handlePrint('ajustes')}
+                        className="flex flex-col items-center gap-0.5 py-3 text-xs font-semibold text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors">
+                        <span className="text-base">🔄</span>
+                        <span>Ajustes posibles</span>
+                        <span className="text-[10px] text-amber-400">{ajustesSugeridos.length} sugerido(s)</span>
+                    </button>
+                    <button onClick={exportCSV}
+                        className="flex flex-col items-center gap-0.5 py-3 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                        <Download size={16} />
+                        <span>Exportar CSV</span>
+                        <span className="text-[10px] text-slate-400">Excel / Sheets</span>
                     </button>
                 </div>
             </div>

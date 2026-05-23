@@ -23,6 +23,9 @@ const Icon = ({ d, size = 20, className = '', strokeWidth = 2 }: { d: string | s
     </svg>
 );
 const QrCode = (p: any) => <Icon {...p} d={['M3 3h6v6H3z','M15 3h6v6h-6z','M3 15h6v6H3z','M15 15h2v2h-2z','M19 15v2','M17 19h4','M19 19v2']} />;
+const Printer      = (p: any) => <Icon {...p} d={['M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5','M6 18H4a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-2','M6 14h12v7H6z']} />;
+const ChevronUp    = (p: any) => <Icon {...p} d={['M18 15l-6-6-6 6']} />;
+const ChevronRight = (p: any) => <Icon {...p} d={['M9 6l6 6-6 6']} />;
 const FileText = (p: any) => <Icon {...p} d={['M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z','M14 2v6h6','M16 13H8','M16 17H8','M10 9H8']} />;
 const BarChart3 = (p: any) => <Icon {...p} d="M3 3v18h18M18 9l-5 5-4-4-3 3" />;
 const LogOut = (p: any) => <Icon {...p} d={['M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4','M16 17l5-5-5-5','M21 12H9']} />;
@@ -1432,6 +1435,7 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
     const [expandedKey, setExpandedKey] = useState<string | null>(null);
     const [printMode, setPrintMode] = useState<'completo' | 'simplificado'>('completo');
     const [vista, setVista] = useState<'reporte' | 'ajustes'>('reporte');
+    const [showPrintModal, setShowPrintModal] = useState(false);
 
     const report = useMemo(() => {
         if (!folio) return { rows: [], totalItems: 0, scannedItems: 0, missingItems: 0, sobranteItems: 0 };
@@ -1970,35 +1974,135 @@ ${ajustesSugeridos.map(a => `
                 </div>
                 )}
 
-                {/* Fila 3: Exportar */}
-                <div className="grid grid-cols-2 divide-x border-t">
-                    <button onClick={() => handlePrint('completo')}
-                        className="flex flex-col items-center gap-0.5 py-3 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                        <span className="text-base">🖨️</span>
-                        <span>Imprimir</span>
-                        <span className="text-[10px] text-slate-400">{filter === 'all' ? 'Completo' : filter === 'faltante' ? 'Faltantes' : filter === 'sobrante' ? 'Sobrantes' : filter === 'ok' ? 'Sin diferencia' : 'Parciales'}</span>
-                    </button>
-                    <button onClick={() => handlePrint('simplificado')}
-                        className="flex flex-col items-center gap-0.5 py-3 text-xs font-semibold text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/20 transition-colors">
-                        <span className="text-base">📋</span>
-                        <span>Simplificado</span>
-                        <span className="text-[10px] text-sky-400">Solo escaneados</span>
+                {/* Botón único Imprimir / Exportar */}
+                <div className="border-t">
+                    <button
+                        onClick={() => setShowPrintModal(true)}
+                        className="w-full flex items-center justify-center gap-2 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                        <Printer size={16} />
+                        Imprimir / Exportar
+                        <ChevronUp size={14} className="text-slate-400" />
                     </button>
                 </div>
-                <div className="grid grid-cols-2 divide-x border-t">
-                    <button onClick={() => handlePrint('ajustes')}
-                        className="flex flex-col items-center gap-0.5 py-3 text-xs font-semibold text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors">
-                        <span className="text-base">🔄</span>
-                        <span>Ajustes posibles</span>
-                        <span className="text-[10px] text-amber-400">{ajustesSugeridos.length} sugerido(s)</span>
-                    </button>
-                    <button onClick={exportCSV}
-                        className="flex flex-col items-center gap-0.5 py-3 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                        <Download size={16} />
-                        <span>Exportar CSV</span>
-                        <span className="text-[10px] text-slate-400">Excel / Sheets</span>
-                    </button>
-                </div>
+
+                {/* Modal de impresión */}
+                {showPrintModal && (
+                    <div className="fixed inset-0 bg-black/50 z-50 flex items-end" onClick={() => setShowPrintModal(false)}>
+                        <div className="w-full bg-white dark:bg-slate-900 rounded-t-3xl border-t dark:border-slate-700 pb-8" onClick={e => e.stopPropagation()}>
+                            {/* Handle */}
+                            <div className="flex justify-center pt-3 pb-1">
+                                <div className="w-10 h-1 rounded-full bg-slate-300 dark:bg-slate-600" />
+                            </div>
+
+                            {/* Header */}
+                            <div className="flex items-center justify-between px-5 py-3 border-b dark:border-slate-700">
+                                <p className="font-semibold text-slate-800 dark:text-white">¿Qué deseas imprimir?</p>
+                                <button onClick={() => setShowPrintModal(false)} className="text-slate-400 text-2xl leading-none">×</button>
+                            </div>
+
+                            {/* Filtro activo */}
+                            {filter !== 'all' && (
+                                <div className="mx-5 mt-3 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                                    <span>🔽</span>
+                                    <span>Filtro activo: <strong className="text-slate-700 dark:text-slate-200">{
+                                        filter === 'faltante' ? `Faltantes (${filtered.length})` :
+                                        filter === 'sobrante' ? `Sobrantes (${filtered.length})` :
+                                        filter === 'ok' ? `Sin diferencia (${filtered.length})` :
+                                        `Parciales (${filtered.length})`
+                                    }</strong></span>
+                                </div>
+                            )}
+
+                            {/* Opciones */}
+                            <div className="mt-2">
+                                {/* Imprimir filtro activo */}
+                                <button
+                                    onClick={() => { setShowPrintModal(false); handlePrint('completo'); }}
+                                    className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-b dark:border-slate-700">
+                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                                        filter === 'faltante' ? 'bg-red-50 dark:bg-red-900/20' :
+                                        filter === 'sobrante' ? 'bg-emerald-50 dark:bg-emerald-900/20' :
+                                        'bg-slate-100 dark:bg-slate-700'}`}>
+                                        <Printer size={20} className={
+                                            filter === 'faltante' ? 'text-red-500' :
+                                            filter === 'sobrante' ? 'text-emerald-500' :
+                                            'text-slate-500'} />
+                                    </div>
+                                    <div className="flex-1 text-left">
+                                        <p className="text-sm font-semibold text-slate-800 dark:text-white">
+                                            {filter === 'all' ? 'Reporte completo' :
+                                             filter === 'faltante' ? 'Imprimir faltantes' :
+                                             filter === 'sobrante' ? 'Imprimir sobrantes' :
+                                             filter === 'ok' ? 'Imprimir sin diferencia' : 'Imprimir parciales'}
+                                        </p>
+                                        <p className="text-xs text-slate-400 mt-0.5">
+                                            {filter === 'all' ? 'Todos los artículos' : `${filtered.length} artículo(s) · respeta el filtro activo`}
+                                        </p>
+                                    </div>
+                                    <ChevronRight size={16} className="text-slate-300" />
+                                </button>
+
+                                {/* Reporte completo (si hay filtro activo) */}
+                                {filter !== 'all' && (
+                                    <button
+                                        onClick={() => { setShowPrintModal(false); setFilter('all'); setTimeout(() => handlePrint('completo'), 100); }}
+                                        className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-b dark:border-slate-700">
+                                        <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center flex-shrink-0">
+                                            <FileText size={20} className="text-slate-500" />
+                                        </div>
+                                        <div className="flex-1 text-left">
+                                            <p className="text-sm font-semibold text-slate-800 dark:text-white">Reporte completo</p>
+                                            <p className="text-xs text-slate-400 mt-0.5">{report.rows.length} artículos · sin filtro</p>
+                                        </div>
+                                        <ChevronRight size={16} className="text-slate-300" />
+                                    </button>
+                                )}
+
+                                {/* Simplificado */}
+                                <button
+                                    onClick={() => { setShowPrintModal(false); handlePrint('simplificado'); }}
+                                    className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-b dark:border-slate-700">
+                                    <div className="w-10 h-10 rounded-xl bg-sky-50 dark:bg-sky-900/20 flex items-center justify-center flex-shrink-0">
+                                        <FileText size={20} className="text-sky-500" />
+                                    </div>
+                                    <div className="flex-1 text-left">
+                                        <p className="text-sm font-semibold text-slate-800 dark:text-white">Simplificado</p>
+                                        <p className="text-xs text-slate-400 mt-0.5">{simplificadoRows.length} artículo(s) con al menos 1 escaneo</p>
+                                    </div>
+                                    <ChevronRight size={16} className="text-slate-300" />
+                                </button>
+
+                                {/* Ajustes posibles */}
+                                <button
+                                    onClick={() => { setShowPrintModal(false); handlePrint('ajustes'); }}
+                                    className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-b dark:border-slate-700">
+                                    <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center flex-shrink-0">
+                                        <RefreshCw size={20} className="text-amber-500" />
+                                    </div>
+                                    <div className="flex-1 text-left">
+                                        <p className="text-sm font-semibold text-slate-800 dark:text-white">Ajustes posibles</p>
+                                        <p className="text-xs text-slate-400 mt-0.5">{ajustesSugeridos.length} movimiento(s) sugerido(s) entre sobrantes y faltantes</p>
+                                    </div>
+                                    <ChevronRight size={16} className="text-slate-300" />
+                                </button>
+
+                                {/* CSV */}
+                                <button
+                                    onClick={() => { setShowPrintModal(false); exportCSV(); }}
+                                    className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                                    <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center flex-shrink-0">
+                                        <Download size={20} className="text-emerald-500" />
+                                    </div>
+                                    <div className="flex-1 text-left">
+                                        <p className="text-sm font-semibold text-slate-800 dark:text-white">Exportar CSV</p>
+                                        <p className="text-xs text-slate-400 mt-0.5">Para Excel, Google Sheets u otras herramientas</p>
+                                    </div>
+                                    <ChevronRight size={16} className="text-slate-300" />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Vista Ajustes Posibles */}

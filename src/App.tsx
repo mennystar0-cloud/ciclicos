@@ -281,31 +281,33 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
 
     const startNewSession = async () => {
         if (!newArea.trim()) { addToast('Escribe el area a escanear', 'warning'); return; }
-        const operatorName = appSession?.nombre || newOperator.trim();
-        if (!operatorName) { addToast('Escribe tu nombre', 'warning'); return; }
+        const operatorName = appSession?.nombre || newOperator.trim() || 'Scanner';
 
-        // Verificar si ya hay una sesion activa de este operador en otro dispositivo
-        if (appSession?.operadorId) {
-            setLoading(true);
-            const allSessions = await fbGetAllSessions(sucursalId);
-            const activeSession = (allSessions as ScanSession[]).find(
-                s => s.operadorId === appSession.operadorId && s.deviceId && s.deviceId !== deviceId
-            );
-            setLoading(false);
-            if (activeSession) {
-                setConflictSession(activeSession);
-                setShowConflict(true);
-                return;
+        try {
+            // Verificar conflicto de sesion en otro dispositivo
+            if (appSession?.operadorId) {
+                setLoading(true);
+                const allSessions = await fbGetAllSessions(sucursalId ?? undefined).catch(() => []);
+                setLoading(false);
+                const activeSession = (allSessions as ScanSession[]).find(
+                    s => s.operadorId === appSession.operadorId && s.deviceId && s.deviceId !== deviceId
+                );
+                if (activeSession) {
+                    setConflictSession(activeSession);
+                    setShowConflict(true);
+                    return;
+                }
             }
+
+            const newId = await doStartSession(newArea.trim(), operatorName, appSession?.operadorId);
+            fbSubscribeToSession(newId, (s) => { if (s) setCurrentSession(s as ScanSession); }, sucursalId ?? undefined);
+            fbSubscribeToSessionItems(newId, (items) => setSessionItems(items as SessionItem[]), sucursalId ?? undefined);
+            setTimeout(() => inputRef.current?.focus(), 300);
+        } catch (err) {
+            setLoading(false);
+            addToast('Error al iniciar sesion. Intenta de nuevo.', 'error');
+            console.error('startNewSession error:', err);
         }
-
-        const newId = await doStartSession(newArea.trim(), operatorName, appSession?.operadorId);
-
-        // subscribe
-        fbSubscribeToSession(newId, (s) => { if (s) setCurrentSession(s as ScanSession); }, sucursalId ?? undefined);
-        fbSubscribeToSessionItems(newId, (items) => setSessionItems(items as SessionItem[]), sucursalId ?? undefined);
-
-        setTimeout(() => inputRef.current?.focus(), 300);
     };
 
     const handleScan = useCallback(async (code: string) => {

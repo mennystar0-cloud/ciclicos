@@ -1489,6 +1489,8 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
 }) => {
     const [filter, setFilter] = useState<'all' | 'faltante' | 'sobrante' | 'ok' | 'parcial' | 'ajustes'>('all');
     const [searchMod, setSearchMod] = useState('');
+    const [sortBy, setSortBy]   = useState<'diff' | 'mod'>('diff');
+    const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
     const [expandedKey, setExpandedKey] = useState<string | null>(null);
     const [printMode, setPrintMode] = useState<'completo' | 'simplificado'>('completo');
     const [vista, setVista] = useState<'reporte' | 'ajustes'>('reporte');
@@ -1522,14 +1524,21 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
         scans.forEach(s => { map[s.area] = (map[s.area] || 0) + 1; });
         return Object.entries(map).map(([area, count]) => ({ area, count })).sort((a, b) => b.count - a.count);
     }, [scans]);
-    const filtered = useMemo(() => report.rows.filter(r => {
-        if (filter !== 'all' && filter !== 'ajustes' && r.status !== filter) return false;
-        if (searchMod.trim()) {
-            const q = searchMod.trim().toLowerCase();
-            return r.mod.toLowerCase().includes(q) || r.color.toLowerCase().includes(q);
-        }
-        return true;
-    }), [report.rows, filter, searchMod]);
+    const filtered = useMemo(() => {
+        const rows = report.rows.filter(r => {
+            if (filter !== 'all' && filter !== 'ajustes' && r.status !== filter) return false;
+            if (searchMod.trim()) {
+                const q = searchMod.trim().toLowerCase();
+                return r.mod.toLowerCase().includes(q) || r.color.toLowerCase().includes(q);
+            }
+            return true;
+        });
+        return rows.sort((a, b) => {
+            const mul = sortDir === 'asc' ? 1 : -1;
+            if (sortBy === 'mod') return mul * a.mod.localeCompare(b.mod);
+            return mul * (a.diff - b.diff);
+        });
+    }, [report.rows, filter, searchMod, sortBy, sortDir]);
 
     const ajustesSugeridos = useMemo(() => {
         if (!folio) return [];
@@ -1929,9 +1938,10 @@ ${ajustesSugeridos.map(a => `
 
 
 
-                {/* Buscador de modelo */}
+                {/* Buscador + Ordenar */}
                 {filter !== 'ajustes' && (
-                <div className="px-3 py-2 border-b dark:border-slate-700">
+                <div className="px-3 py-2 border-b dark:border-slate-700 space-y-2">
+                    {/* Buscador */}
                     <div className="relative">
                         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                         <input
@@ -1947,8 +1957,27 @@ ${ajustesSugeridos.map(a => `
                             </button>
                         )}
                     </div>
+                    {/* Ordenar */}
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-400 dark:text-slate-500 flex-shrink-0">Ordenar:</span>
+                        <div className="flex gap-1 flex-1">
+                            <button onClick={() => setSortBy('mod')}
+                                className={`flex-1 py-1 rounded-lg text-xs font-medium transition-colors ${sortBy === 'mod' ? 'bg-sky-500 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                                Modelo
+                            </button>
+                            <button onClick={() => setSortBy('diff')}
+                                className={`flex-1 py-1 rounded-lg text-xs font-medium transition-colors ${sortBy === 'diff' ? 'bg-sky-500 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                                Diferencia
+                            </button>
+                        </div>
+                        <button onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+                            className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold transition-colors hover:bg-slate-200 dark:hover:bg-slate-600 flex-shrink-0"
+                            title={sortDir === 'asc' ? 'Ascendente' : 'Descendente'}>
+                            {sortDir === 'asc' ? '↑ ASC' : '↓ DESC'}
+                        </button>
+                    </div>
                     {searchMod && (
-                        <p className="text-xs text-slate-400 mt-1 px-1">
+                        <p className="text-xs text-slate-400">
                             {filtered.length} resultado(s) para <strong className="text-slate-600 dark:text-slate-300">"{searchMod}"</strong>
                         </p>
                     )}
@@ -1967,7 +1996,7 @@ ${ajustesSugeridos.map(a => `
                         </tr>
                     </thead>
                     <tbody>
-                        {(filter === 'all' ? report.rows.slice().sort((a, b) => a.diff - b.diff) : filter === 'ajustes' ? report.rows.slice().sort((a, b) => a.diff - b.diff) : filtered.slice().sort((a, b) => a.diff - b.diff)).map((r, i) => (
+                        {filtered.map((r, i) => (
                             <tr key={r.vkey} className={r.status} style={{ background: i % 2 === 0 ? '#f8fafc' : 'white' }}>
                                 <td style={{ padding: '5px 8px', fontSize: 10, fontWeight: 'bold', color: '#0f172a' }}>{r.mod}</td>
                                 <td style={{ padding: '5px 8px', fontSize: 10, color: '#475569' }}>{r.color}</td>
@@ -2049,7 +2078,7 @@ ${ajustesSugeridos.map(a => `
                             { key: 'ok',       label: 'OK',       count: report.rows.filter(r => r.status === 'ok').length,         color: 'text-slate-400',  active: 'border-slate-500 text-slate-600' },
                             { key: 'ajustes',  label: 'Ajustes',  count: ajustesSugeridos.length,                                  color: 'text-amber-500',  active: 'border-amber-500 text-amber-600' },
                         ] as const).map(({ key, label, count, color, active }) => (
-                            <button key={key} onClick={() => { setFilter(key as any); setSearchMod(''); }}
+                            <button key={key} onClick={() => { setFilter(key as any); setSearchMod(''); setSortBy('diff'); setSortDir('asc'); }}
                                 className={`flex-shrink-0 flex flex-col items-center px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors ${
                                     filter === key
                                         ? active

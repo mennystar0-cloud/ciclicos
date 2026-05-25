@@ -358,3 +358,31 @@ export const fbGetAllFoliosDetallado = async () => {
     }));
     return result.sort((a, b) => b.createdAt - a.createdAt);
 };
+
+// ─── UBICACIONES DE MODELOS ───────────────────────────────────────────────────
+export interface UbicacionSKU {
+    vkey: string;
+    mod: string;
+    color: string;
+    talla: string;
+    area: string;
+    cantidad: number;
+    folioId: string;
+    folioName: string;
+    updatedAt: number;
+}
+
+export const fbSaveUbicaciones = async (sucursalId: string, ubicaciones: UbicacionSKU[]) => {
+    const { doc, setDoc } = await import('firebase/firestore');
+    await setDoc(
+        doc(db, 'sucursales', sucursalId, 'settings', 'ubicaciones'),
+        { data: ubicaciones, updatedAt: Date.now() }
+    );
+};
+
+export const fbGetUbicaciones = async (sucursalId: string): Promise<UbicacionSKU[]> => {
+    const { doc, getDoc } = await import('firebase/firestore');
+    const snap = await getDoc(doc(db, 'sucursales', sucursalId, 'settings', 'ubicaciones'));
+    if (!snap.exists()) return [];
+    return snap.data().data ?? [];
+};

@@ -8,6 +8,7 @@ import {
     fbDeleteSession, fbGetSessionItems, fbGetAllSessions,
     loginSuperAdmin, fbLoginSucursal, fbGetSucursales, fbSaveSucursal,
     fbDeleteSucursal, fbGetAllSucursalesStats, fbGetAllFoliosDetallado, fbGetOperadores,
+    fbSaveUbicaciones, fbGetUbicaciones,
     fbSaveOperador, fbDeleteOperador, fbLoginOperador, hashPassword
 } from './firebase.ts';
 import type { Role, Tab, Folio, Catalog, ColorMap, Scan, StockMap } from './types.ts';
@@ -2302,60 +2303,203 @@ ${ajustesSugeridos.map(a => `
 };
 
 // ─── HISTORY TAB ──────────────────────────────────────────────────────────────
-const HistoryTab = ({ scans, folioId, folio, onDataChange, addToast }: {
-    scans: Scan[]; folioId: string | null; folio: Folio | null;
-    onDataChange: () => void; addToast: (m: string, t?: ToastType) => void;
+const UbicacionesTab = ({ sucursalId, folio, scans, addToast }: {
+    sucursalId?: string; folio: Folio | null;
+    scans: Scan[]; addToast: (m: string, t?: ToastType) => void;
 }) => {
-    const [search, setSearch] = useState('');
-    const [selected, setSelected] = useState<Set<string>>(new Set());
+    const [ubicaciones, setUbicaciones] = useState<any[]>([]);
+    const [loading, setLoading]         = useState(true);
+    const [search, setSearch]           = useState('');
+    const [sortBy, setSortBy]           = useState<'mod' | 'area' | 'fecha'>('mod');
+
+    // Cargar ubicaciones guardadas
+    const loadUbicaciones = async () => {
+        if (!sucursalId) return;
+        setLoading(true);
+        const data = await fbGetUbicaciones(sucursalId);
+        setUbicaciones(data);
+        setLoading(false);
+    };
+
+    useEffect(() => { loadUbicaciones(); }, [sucursalId]);
+
+    // Calcular y guardar ubicaciones al cerrar inventario
+    const calcularYGuardar = async () => {
+        if (!folio || !sucursalId || scans.length === 0) {
+            addToast('No hay escaneos para calcular ubicaciones', 'warning');
+            return;
+        }
+        // Por cada SKU, tomar el último escaneo (mayor ts)
+        const map: Record<string, any> = {};
+        scans.forEach(s => {
+            if (!map[s.vkey] || s.ts > map[s.vkey].ts) {
+                map[s.vkey] = {
+                    vkey: s.vkey,
+                    mod: s.mod,
+                    color: s.color,
+                    talla: s.talla,
+                    area: s.area,
+                    cantidad: 0,
+                    folioId: folio.id,
+                    folioName: folio.name,
+                    updatedAt: s.ts,
+                };
+            }
+        });
+        // Calcular cantidad por SKU desde existenciasMap del folio
+        Object.keys(map).forEach(vkey => {
+            map[vkey].cantidad = folio.existenciasMap?.[vkey] ?? 0;
+        });
+        const nuevas = Object.values(map);
+        await fbSaveUbicaciones(sucursalId, nuevas);
+        setUbicaciones(nuevas);
+        addToast(`${nuevas.length} ubicaciones actualizadas`, 'success');
+    };
 
     const filtered = useMemo(() => {
-        const q = search.trim().toUpperCase();
-        return scans.filter(s => !q || s.mod?.includes(q) || s.color?.includes(q) || s.area?.includes(q) || s.code?.includes(q));
-    }, [scans, search]);
+        const q = search.trim().toLowerCase();
+        const rows = q
+            ? ubicaciones.filter(u =>
+                u.mod?.toLowerCase().includes(q) ||
+                u.color?.toLowerCase().includes(q) ||
+                u.talla?.toLowerCase().includes(q) ||
+                u.area?.toLowerCase().includes(q))
+            : ubicaciones;
+        return [...rows].sort((a, b) => {
+            if (sortBy === 'mod')   return a.mod.localeCompare(b.mod);
+            if (sortBy === 'area')  return a.area.localeCompare(b.area);
+            return b.updatedAt - a.updatedAt;
+        });
+    }, [ubicaciones, search, sortBy]);
 
-    const handleDelete = async (s: Scan) => {
-        if (!folioId) return;
-        await fbDeleteScan(s.id, folioId, s.vkey, s.area, s.pos);
-        addToast('Escaneo eliminado', 'info');
-    };
-
-    const handleDeleteSelected = async () => {
-        if (!folioId || selected.size === 0) return;
-        if (!confirm(`¿Eliminar ${selected.size} escaneos?`)) return;
-        for (const id of Array.from(selected)) {
-            const s = scans.find(x => x.id === id);
-            if (s) await fbDeleteScan(s.id, folioId, s.vkey, s.area, s.pos);
-        }
-        setSelected(new Set());
-        addToast(`${selected.size} escaneos eliminados`, 'warning');
-    };
+    // Agrupar por área para vista de mapa
+    const porArea = useMemo(() => {
+        const map: Record<string, any[]> = {};
+        filtered.forEach(u => {
+            if (!map[u.area]) map[u.area] = [];
+            map[u.area].push(u);
+        });
+        return map;
+    }, [filtered]);
 
     return (
-        <div className="space-y-3">
-            <div className="flex gap-2">
-                <div className="flex-1 relative">
-                    <Search size={14} className="absolute left-3 top-3 text-slate-400" />
-                    <input className="w-full border rounded-xl pl-8 pr-4 py-2.5 text-sm" placeholder="Buscar..." value={search} onChange={e => setSearch(e.target.value)} />
+        <div className="space-y-4">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+                <div>
+                    <h2 className="text-lg font-bold text-slate-800 dark:text-white">Ubicaciones</h2>
+                    <p className="text-xs text-slate-400 dark:text-slate-500">
+                        {ubicaciones.length > 0
+                            ? `${ubicaciones.length} SKUs · Actualizado: ${ubicaciones[0] ? new Date(Math.max(...ubicaciones.map(u => u.updatedAt))).toLocaleDateString('es-MX') : '-'}`
+                            : 'Sin datos aún'}
+                    </p>
                 </div>
-                {selected.size > 0 && <button onClick={handleDeleteSelected} className="px-3 bg-red-50 text-red-600 border border-red-200 rounded-xl text-sm font-semibold">Eliminar ({selected.size})</button>}
+                <button onClick={calcularYGuardar}
+                    className="flex items-center gap-2 bg-sky-500 hover:bg-sky-600 text-white px-3 py-2 rounded-xl text-xs font-bold active:scale-95">
+                    <RefreshCw size={13} /> Actualizar
+                </button>
             </div>
-            <p className="text-xs text-slate-400">{filtered.length} escaneos</p>
-            <div className="space-y-2">
-                {filtered.map(s => (
-                    <div key={s.id} className={`bg-white rounded-xl border shadow-sm px-4 py-3 flex items-start gap-3 ${selected.has(s.id) ? 'border-sky-400 bg-sky-50' : ''}`}>
-                        <input type="checkbox" checked={selected.has(s.id)} onChange={() => {
-                            setSelected(prev => { const n = new Set(prev); n.has(s.id) ? n.delete(s.id) : n.add(s.id); return n; });
-                        }} className="mt-1 w-4 h-4 rounded" />
-                        <div className="flex-1 min-w-0">
-                            <p className="font-semibold text-slate-800 text-sm">{s.mod} · {s.color} · T{s.talla}</p>
-                            <p className="text-xs text-slate-500">{s.area} · #{s.pos} · {s.user}</p>
-                            <p className="text-xs text-slate-400">{formatDate(s.ts)}</p>
-                        </div>
-                        <button onClick={() => handleDelete(s)} className="text-red-400"><Trash2 size={16} /></button>
+
+            {/* Info */}
+            {ubicaciones.length === 0 && !loading && (
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-2xl p-4 text-center space-y-2">
+                    <p className="text-2xl">📍</p>
+                    <p className="font-semibold text-amber-800 dark:text-amber-300 text-sm">Sin ubicaciones guardadas</p>
+                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                        Abre un inventario, escanea los artículos y toca <strong>Actualizar</strong> para registrar las ubicaciones.
+                    </p>
+                </div>
+            )}
+
+            {ubicaciones.length > 0 && (
+                <>
+                {/* Buscador y ordenar */}
+                <div className="space-y-2">
+                    <div className="relative">
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                            className="w-full pl-8 pr-8 py-2.5 text-sm bg-white dark:bg-slate-800 border dark:border-slate-600 rounded-xl focus:outline-none focus:border-sky-400 dark:text-white placeholder-slate-400"
+                            placeholder="Buscar modelo, color, talla o área..."
+                            value={search}
+                            onChange={e => setSearch(e.target.value)}
+                        />
+                        {search && (
+                            <button onClick={() => setSearch('')}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">×</button>
+                        )}
                     </div>
-                ))}
-            </div>
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-400 flex-shrink-0">Ordenar:</span>
+                        {(['mod','area','fecha'] as const).map(s => (
+                            <button key={s} onClick={() => setSortBy(s)}
+                                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${sortBy === s ? 'bg-sky-500 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                                {s === 'mod' ? 'Modelo' : s === 'area' ? 'Área' : 'Reciente'}
+                            </button>
+                        ))}
+                        <span className="text-xs text-slate-400 ml-auto">{filtered.length} SKU(s)</span>
+                    </div>
+                </div>
+
+                {/* Lista */}
+                {sortBy === 'area' ? (
+                    /* Vista agrupada por área */
+                    <div className="space-y-3">
+                        {Object.entries(porArea).map(([area, items]) => (
+                            <div key={area} className="bg-white dark:bg-slate-800 rounded-2xl border dark:border-slate-700 overflow-hidden">
+                                <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-700 flex items-center justify-between">
+                                    <p className="font-bold text-slate-700 dark:text-white text-sm">📍 {area}</p>
+                                    <span className="text-xs text-slate-400">{items.length} SKU(s)</span>
+                                </div>
+                                <div className="divide-y dark:divide-slate-700">
+                                    {items.map(u => (
+                                        <div key={u.vkey} className="px-4 py-3 flex items-center justify-between">
+                                            <div>
+                                                <p className="text-sm font-semibold text-slate-800 dark:text-white">{u.mod} · {u.color} · T{u.talla}</p>
+                                                <p className="text-xs text-slate-400">{new Date(u.updatedAt).toLocaleDateString('es-MX')} · {u.folioName}</p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-lg font-black text-sky-600">{u.cantidad}</p>
+                                                <p className="text-[10px] text-slate-400">piezas</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    /* Vista lista */
+                    <div className="space-y-2">
+                        {filtered.map(u => (
+                            <div key={u.vkey} className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 px-4 py-3 flex items-center gap-3">
+                                <div className="flex-1 min-w-0">
+                                    <p className="font-bold text-slate-800 dark:text-white text-sm truncate">{u.mod} · {u.color} · T{u.talla}</p>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                        <span className="text-[11px] bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400 px-2 py-0.5 rounded-full font-medium">
+                                            📍 {u.area}
+                                        </span>
+                                        <span className="text-[11px] text-slate-400">{u.folioName}</span>
+                                    </div>
+                                </div>
+                                <div className="text-right flex-shrink-0">
+                                    <p className="text-xl font-black text-sky-600">{u.cantidad}</p>
+                                    <p className="text-[10px] text-slate-400">piezas</p>
+                                </div>
+                            </div>
+                        ))}
+                        {filtered.length === 0 && search && (
+                            <p className="text-center text-slate-400 py-8 text-sm">Sin resultados para "{search}"</p>
+                        )}
+                    </div>
+                )}
+                </>
+            )}
+
+            {loading && (
+                <div className="text-center py-10 text-slate-400">
+                    <p>Cargando ubicaciones...</p>
+                </div>
+            )}
         </div>
     );
 };
@@ -3489,7 +3633,7 @@ const App: React.FC = () => {
         { id: 'sesiones',    label: 'Sesiones',     icon: <Users />,     roles: ['admin'], badge: 0 },
         { id: 'reporte',     label: 'Reporte',      icon: <BarChart3 />, roles: ['admin'] },
         { id: 'consulta',    label: 'Consulta',     icon: <Search />,    roles: ['admin'] },
-        { id: 'historial',   label: 'Historial',    icon: <History />,   roles: ['admin'] },
+        { id: 'historial',   label: 'Ubicaciones',  icon: <MapPin />,    roles: ['admin'] },
         { id: 'colores',     label: 'Colores',      icon: <Palette />,   roles: ['admin'] },
         { id: 'database',    label: 'DB',           icon: <Database />,  roles: ['admin'] },
         { id: 'info',        label: 'Info',         icon: <BookOpen />,  roles: ['admin'] },
@@ -3540,7 +3684,7 @@ const App: React.FC = () => {
                     {activeTab === 'sesiones'    && role === 'admin'   && <SessionsAdminTab addToast={addToast} sucursalId={sucursalId ?? undefined} />}
                     {activeTab === 'reporte'     && role === 'admin'   && <ReportTab folio={folio} scans={scans} onTabChange={handleTabChange} addToast={addToast} />}
                     {activeTab === 'consulta'    && role === 'admin'   && <QueryTab folio={folio} scans={scans} />}
-                    {activeTab === 'historial'   && role === 'admin'   && <HistoryTab scans={scans} folioId={folioId} folio={folio} onDataChange={() => {}} addToast={addToast} />}
+                    {activeTab === 'historial'   && role === 'admin'   && <UbicacionesTab sucursalId={sucursalId ?? undefined} folio={folio} scans={scans} addToast={addToast} />}
                     {activeTab === 'colores'     && role === 'admin'   && <DictTab colors={colors} onUpdate={handleUpdateColorMap} addToast={addToast} />}
                     {activeTab === 'database'    && role === 'admin'   && <DatabaseTab addToast={addToast} />}
                     {activeTab === 'info'        && role === 'admin'   && <InfoTab />}

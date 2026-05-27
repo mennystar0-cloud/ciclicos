@@ -17,6 +17,13 @@ import {
     canonical, cleanModel, detectCategoryBySize, generateBarcode
 } from './utils.ts';
 
+// Talla 100 = Unitalla
+const formatTalla = (t: string | number): string => {
+    const s = String(t).trim();
+    if (s === '100' || s.toUpperCase() === 'UNI') return 'UNI';
+    return s;
+};
+
 // ─── ICONS ───────────────────────────────────────────────────────────────────
 const Icon = ({ d, size = 20, className = '', strokeWidth = 2 }: { d: string | string[]; size?: number; className?: string; strokeWidth?: number }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -691,7 +698,7 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
                         <div key={s.id} className={`bg-white rounded-xl border px-4 py-2.5 flex justify-between items-center shadow-sm ${!s.recognized ? 'border-red-100 bg-red-50' : ''}`}>
                             <div>
                                 {s.recognized ? (
-                                    <p className="text-sm font-semibold text-slate-700">{s.mod} · {s.color} · T{s.talla}</p>
+                                    <p className="text-sm font-semibold text-slate-700">{s.mod} · {s.color} · {formatTalla(s.talla)}</p>
                                 ) : (
                                     <p className="text-sm font-mono text-red-600">{s.code}</p>
                                 )}
@@ -1578,7 +1585,7 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
 
     const exportCSV = () => {
         const header = 'Modelo,Color,Talla,Teórico,Físico,Diferencia,Estado\n';
-        const rows = report.rows.map(r => `${r.mod},${r.color},${r.talla},${r.teo},${r.fis},${r.diff},${r.status}`).join('\n');
+        const rows = report.rows.map(r => `${r.mod},${r.color},${formatTalla(r.talla)},${r.teo},${r.fis},${r.diff},${r.status}`).join('\n');
         const blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a'); a.href = url; a.download = `reporte-${folio?.name}.csv`; a.click();
@@ -1658,13 +1665,13 @@ ${ajustesSugeridos.map(a => `
   <div class="ajuste-row">
     <div class="ajuste-box sobrante-box">
       <div class="label">Sobrante</div>
-      <div class="value">${a.sobrante.color} T${a.sobrante.talla}</div>
+      <div class="value">${a.sobrante.color} T${formatTalla(a.sobrante.talla)}</div>
       <div style="font-size:10px;color:#16a34a">+${a.sobrante.exceso} pieza(s)</div>
     </div>
     <div class="arrow">→</div>
     <div class="ajuste-box faltante-box">
       <div class="label">Faltante</div>
-      <div class="value">${a.faltante.color} T${a.faltante.talla}</div>
+      <div class="value">${a.faltante.color} T${formatTalla(a.faltante.talla)}</div>
       <div style="font-size:10px;color:#dc2626">${a.faltante.falta} pieza(s)</div>
     </div>
     <div class="piezas">
@@ -1813,7 +1820,7 @@ ${ajustesSugeridos.map(a => `
     <tr class="${r.status}">
       <td style="font-weight:600">${r.mod}</td>
       <td>${r.color}</td>
-      <td style="text-align:center">${r.talla}</td>
+      <td style="text-align:center">${formatTalla(r.talla)}</td>
       <td style="text-align:center">${r.teo}</td>
       <td style="text-align:center">${r.fis}</td>
       <td style="text-align:center" class="${r.diff < 0 ? 'diff-neg' : r.diff > 0 ? 'diff-pos' : 'diff-zero'}">${r.diff > 0 ? '+' : ''}${r.diff}</td>
@@ -2001,7 +2008,7 @@ ${ajustesSugeridos.map(a => `
                             <tr key={r.vkey} className={r.status} style={{ background: i % 2 === 0 ? '#f8fafc' : 'white' }}>
                                 <td style={{ padding: '5px 8px', fontSize: 10, fontWeight: 'bold', color: '#0f172a' }}>{r.mod}</td>
                                 <td style={{ padding: '5px 8px', fontSize: 10, color: '#475569' }}>{r.color}</td>
-                                <td style={{ padding: '5px 8px', fontSize: 10, color: '#475569', textAlign: 'center' }}>{r.talla}</td>
+                                <td style={{ padding: '5px 8px', fontSize: 10, color: '#475569', textAlign: 'center' }}>{formatTalla(r.talla)}</td>
                                 <td style={{ padding: '5px 8px', fontSize: 10, textAlign: 'center', color: '#0f172a' }}>{r.teo}</td>
                                 <td style={{ padding: '5px 8px', fontSize: 10, textAlign: 'center', color: '#0ea5e9', fontWeight: 'bold' }}>{r.fis}</td>
                                 <td style={{ padding: '5px 8px', fontSize: 10, textAlign: 'center', fontWeight: 'bold', color: r.diff < 0 ? '#ef4444' : r.diff > 0 ? '#10b981' : '#94a3b8' }}>
@@ -2255,7 +2262,7 @@ ${ajustesSugeridos.map(a => `
                             <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-xl p-3 text-center">
                                 <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase">Sobrante</p>
                                 <p className="font-bold text-emerald-700 dark:text-emerald-300 text-sm mt-1">{a.sobrante.color}</p>
-                                <p className="text-xs text-emerald-600 dark:text-emerald-400">T{a.sobrante.talla}</p>
+                                <p className="text-xs text-emerald-600 dark:text-emerald-400">{formatTalla(a.sobrante.talla)}</p>
                                 <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">+{a.sobrante.exceso}</p>
                             </div>
                             <div className="flex flex-col items-center gap-1">
@@ -2267,7 +2274,7 @@ ${ajustesSugeridos.map(a => `
                             <div className="bg-red-50 dark:bg-red-900/20 rounded-xl p-3 text-center">
                                 <p className="text-[10px] text-red-600 dark:text-red-400 font-bold uppercase">Faltante</p>
                                 <p className="font-bold text-red-700 dark:text-red-300 text-sm mt-1">{a.faltante.color}</p>
-                                <p className="text-xs text-red-600 dark:text-red-400">T{a.faltante.talla}</p>
+                                <p className="text-xs text-red-600 dark:text-red-400">{formatTalla(a.faltante.talla)}</p>
                                 <p className="text-xs font-bold text-red-600 dark:text-red-400">-{a.faltante.falta}</p>
                             </div>
                         </div>
@@ -2454,7 +2461,7 @@ const UbicacionesTab = ({ sucursalId, folio, scans, addToast }: {
                                     {items.map(u => (
                                         <div key={u.vkey} className="px-4 py-3 flex items-center justify-between">
                                             <div>
-                                                <p className="text-sm font-semibold text-slate-800 dark:text-white">{u.mod} · {u.color} · T{u.talla}</p>
+                                                <p className="text-sm font-semibold text-slate-800 dark:text-white">{u.mod} · {u.color} · {formatTalla(u.talla)}</p>
                                                 <p className="text-xs text-slate-400">{new Date(u.updatedAt).toLocaleDateString('es-MX')} · {u.folioName}</p>
                                             </div>
                                             <div className="text-right">
@@ -2473,7 +2480,7 @@ const UbicacionesTab = ({ sucursalId, folio, scans, addToast }: {
                         {filtered.map(u => (
                             <div key={u.vkey} className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 px-4 py-3 flex items-center gap-3">
                                 <div className="flex-1 min-w-0">
-                                    <p className="font-bold text-slate-800 dark:text-white text-sm truncate">{u.mod} · {u.color} · T{u.talla}</p>
+                                    <p className="font-bold text-slate-800 dark:text-white text-sm truncate">{u.mod} · {u.color} · {formatTalla(u.talla)}</p>
                                     <div className="flex items-center gap-2 mt-0.5">
                                         <span className="text-[11px] bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400 px-2 py-0.5 rounded-full font-medium">
                                             📍 {u.area}

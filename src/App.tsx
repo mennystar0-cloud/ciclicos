@@ -691,7 +691,7 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
                             <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center"><Check className="text-white" size={20} /></div>
                             <div>
                                 <p className="font-bold text-emerald-800">{lastScan.mod}</p>
-                                <p className="text-sm text-emerald-600">{lastScan.color} · Talla {lastScan.talla}</p>
+                                <p className="text-sm text-emerald-600">{lastScan.color} · Talla {formatTallaFromVkey(lastScan.talla, lastScan.vkey)}</p>
                             </div>
                         </div>
                     ) : (
@@ -898,7 +898,7 @@ const SessionsAdminTab = ({ addToast, sucursalId }: { addToast: (m: string, t?: 
                             {items[session.id].map(item => (
                                 <div key={item.id} className={`px-4 py-2 border-b last:border-0 flex justify-between text-xs ${!item.recognized ? 'bg-red-50' : ''}`}>
                                     <span className={item.recognized ? 'text-slate-700' : 'text-red-600 font-mono'}>
-                                        {item.recognized ? `${item.mod} · ${item.color} · T${item.talla}` : item.code}
+                                        {item.recognized ? `${item.mod} · ${item.color} · ${formatTallaFromVkey(item.talla, item.vkey)}` : item.code}
                                     </span>
                                     <span className="text-slate-400">{formatDate(item.ts)}</span>
                                 </div>
@@ -1229,7 +1229,7 @@ const StockTab = ({ folioId, catalog, colors, onUpdate, addToast, sucursalId }: 
                     <div className="space-y-1 max-h-60 overflow-y-auto">
                         {preview.map((p, i) => (
                             <div key={i} className="flex justify-between text-xs bg-white border rounded-lg px-3 py-2">
-                                <span className="font-mono">{p.mod} · {p.color} · {p.talla}</span>
+                                <span className="font-mono">{p.mod} · {p.color} · {formatTallaFromVkey(p.talla, p.vkey)}</span>
                                 <span className="font-bold text-slate-700">{p.qty} pzas</span>
                             </div>
                         ))}
@@ -1455,7 +1455,7 @@ const ScanTab = ({ folio, catalog, colors, scans, role, addToast }: {
                         </div>
                         <div>
                             <p className={`font-bold ${lastScan.ok ? 'text-emerald-800' : 'text-red-800'}`}>{lastScan.ok ? `${lastScan.mod} · ${lastScan.color}` : 'No reconocido'}</p>
-                            <p className={`text-sm ${lastScan.ok ? 'text-emerald-600' : 'text-red-600 font-mono'}`}>{lastScan.ok ? `Talla ${lastScan.talla}` : lastScan.code}</p>
+                            <p className={`text-sm ${lastScan.ok ? 'text-emerald-600' : 'text-red-600 font-mono'}`}>{lastScan.ok ? `Talla ${formatTallaFromVkey(lastScan.talla, lastScan.vkey)}` : lastScan.code}</p>
                         </div>
                     </div>
                 </div>
@@ -2242,13 +2242,13 @@ ${ajustesSugeridos.map(a => `
                                     <div className="p-3">
                                         <p className="text-[10px] text-emerald-600 font-bold uppercase mb-1">Sobrante</p>
                                         <p className="text-sm font-semibold text-slate-700">{a.sobrante.color}</p>
-                                        <p className="text-xs text-slate-500">Talla {a.sobrante.talla}</p>
+                                        <p className="text-xs text-slate-500">Talla {formatTallaFromVkey(a.sobrante.talla, a.sobrante.vkey)}</p>
                                         <p className="text-lg font-bold text-emerald-600 mt-1">+{a.sobrante.exceso}</p>
                                     </div>
                                     <div className="p-3">
                                         <p className="text-[10px] text-red-500 font-bold uppercase mb-1">Faltante</p>
                                         <p className="text-sm font-semibold text-slate-700">{a.faltante.color}</p>
-                                        <p className="text-xs text-slate-500">Talla {a.faltante.talla}</p>
+                                        <p className="text-xs text-slate-500">Talla {formatTallaFromVkey(a.faltante.talla, a.faltante.vkey)}</p>
                                         <p className="text-lg font-bold text-red-500 mt-1">-{a.faltante.falta}</p>
                                     </div>
                                 </div>
@@ -2306,7 +2306,7 @@ ${ajustesSugeridos.map(a => `
                 {filtered.map(r => (
                     <div key={r.vkey} className="bg-white rounded-xl border overflow-hidden shadow-sm">
                         <button onClick={() => setExpandedKey(expandedKey === r.vkey ? null : r.vkey)} className="w-full text-left px-4 py-3 flex items-center gap-2">
-                            <div className="flex-1 min-w-0"><p className="text-sm font-semibold text-slate-800 truncate">{r.mod}</p><p className="text-xs text-slate-500">{r.color} · Talla {r.talla}</p></div>
+                            <div className="flex-1 min-w-0"><p className="text-sm font-semibold text-slate-800 truncate">{r.mod}</p><p className="text-xs text-slate-500">{r.color} · Talla {formatTallaFromVkey(r.talla, r.vkey)}</p></div>
                             <div className="flex items-center gap-2 flex-shrink-0">
                                 <span className="text-sm font-bold text-slate-700"><span className="text-sky-600">{r.fis}</span><span className="text-slate-300">/</span><span className="text-slate-500">{r.teo}</span></span>
                                 <span className={`text-sm font-bold w-8 text-right ${r.diff < 0 ? 'text-red-500' : r.diff > 0 ? 'text-emerald-500' : 'text-slate-400'}`}>{r.diff > 0 ? '+' : ''}{r.diff}</span>
@@ -2558,7 +2558,7 @@ const QueryTab = ({ folio, scans }: { folio: Folio | null; scans: Scan[] }) => {
             {results.map(r => (
                 <div key={r.vkey} className="bg-white rounded-xl border shadow-sm p-4">
                     <div className="flex justify-between items-start">
-                        <div><p className="font-bold text-slate-800">{r.mod}</p><p className="text-sm text-slate-500">{r.color} · Talla {r.talla}</p></div>
+                        <div><p className="font-bold text-slate-800">{r.mod}</p><p className="text-sm text-slate-500">{r.color} · Talla {formatTallaFromVkey(r.talla, r.vkey)}</p></div>
                         <div className="text-right"><p className="text-xs text-slate-400">Teo / Fís</p><p className="text-lg font-bold">{r.teo} / <span className={r.fis >= r.teo ? 'text-emerald-600' : 'text-red-500'}>{r.fis}</span></p></div>
                     </div>
                     {Object.keys(r.areaMap).length > 0 && (

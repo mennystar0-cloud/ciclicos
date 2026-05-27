@@ -1151,8 +1151,10 @@ const StockTab = ({ folioId, catalog, colors, onUpdate, addToast, sucursalId }: 
             const colorRaw = parts.slice(0, parts.length - 2).join(' ');
             if (isNaN(qty) || !modRaw || !colorRaw || !tallaRaw) continue;
             const cat = detectCategoryBySize(tallaRaw);
-            const vkey = keyOf(modRaw, colorRaw, tallaRaw, cat);
-            parsed.push({ mod: cleanModel(modRaw), color: canonical(colorRaw), talla: tallaRaw, qty, vkey, cat });
+            // UNI / UNITALLA → normalizar a "100" para que getSizeCode genere vkey correcto
+            const tallaNorm = (tallaRaw.toUpperCase() === 'UNI' || tallaRaw.toUpperCase() === 'UNITALLA') ? '100' : tallaRaw;
+            const vkey = keyOf(modRaw, colorRaw, tallaNorm, cat);
+            parsed.push({ mod: cleanModel(modRaw), color: canonical(colorRaw), talla: tallaNorm, qty, vkey, cat });
         }
         setPreview(parsed); setStep(1);
     };

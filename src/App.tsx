@@ -1243,8 +1243,9 @@ const StockTab = ({ folioId, catalog, colors, onUpdate, addToast, sucursalId }: 
                 tallaNorm = tallaRaw; catFinal = cat;
             }
             // Para ropa construir vkey manual con prefijo R|
+            const ropaCode = ropaTallaToCode(tallaNorm);
             const vkey = catFinal === 'ropa'
-                ? (() => { const code = ropaTallaToCode(tallaNorm); return code !== '000' ? \`R|\${cleanModel(modRaw)}|\${canonical(colorRaw)}|\${code}\` : keyOf(modRaw, colorRaw, tallaNorm, 'ropa'); })()
+                ? (ropaCode !== '000' ? ('R|' + cleanModel(modRaw) + '|' + canonical(colorRaw) + '|' + ropaCode) : keyOf(modRaw, colorRaw, tallaNorm, 'ropa'))
                 : keyOf(modRaw, colorRaw, tallaNorm, catFinal);
             parsed.push({ mod: cleanModel(modRaw), color: canonical(colorRaw), talla: tallaNorm, qty, vkey, cat: catFinal });
         }

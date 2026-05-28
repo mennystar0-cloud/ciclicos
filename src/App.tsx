@@ -40,6 +40,69 @@ const formatTallaFromVkey = (talla: string, vkey?: string): string => {
     return talla;
 };
 
+// ─── TALLAS DE ROPA ───────────────────────────────────────────────────────────
+// Porción de código → talla mostrar
+const ROPA_SIZE_MAP: Record<string, string> = {
+    '100': 'CH',
+    '110': 'M',
+    '120': 'G',
+    '128': 'XG',
+    '130': 'EXG',
+};
+
+// Normalizar talla del teórico (CHM→CH, GEX→G, MEX→M, etc.)
+const normalizeTallaRopa = (t: string): string => {
+    const u = t.toUpperCase().trim();
+    if (u === 'UNI' || u === 'UNITALLA') return '100'; // unitalla calzado
+    // Tallas ropa exactas
+    if (['CH','M','G','XG','EXG'].includes(u)) return u;
+    // Con sufijo: tomar prefijo conocido
+    if (u.startsWith('EXG')) return 'EXG';
+    if (u.startsWith('XG') || u.startsWith('XCH')) return 'XG';
+    if (u.startsWith('CH')) return 'CH';
+    if (u.startsWith('ME') || u === 'M') return 'M';
+    if (u.startsWith('GDE') || u.startsWith('GE') || u.startsWith('G')) return 'G';
+    return u;
+};
+
+// Convertir talla ropa a código 3 dígitos para vkey
+const ropaTallaToCode = (t: string): string => {
+    const norm = normalizeTallaRopa(t);
+    const inv = Object.entries(ROPA_SIZE_MAP).find(([, v]) => v === norm);
+    if (inv) return inv[0];
+    return '000';
+};
+
+// Formatear talla considerando categoría
+const formatTallaConCategoria = (talla: string, vkey?: string): string => {
+    if (!vkey) return formatTallaFromVkey(talla, vkey);
+    const isRopa = vkey.startsWith('R|');
+    if (!isRopa) return formatTallaFromVkey(talla, vkey);
+    // Para ropa: talla3d viene de splitKey, mapear a nombre
+    const talla3d = vkey.split('|')[3] || vkey.split('|')[2] || '000';
+    return ROPA_SIZE_MAP[talla3d] || talla;
+};
+
+// Decodificar código de barras de ROPA
+const decodeRopaBarcode = (barcode: string, colorMap: Record<string, string>) => {
+    const clean = barcode.length === 12 ? '0' + barcode : barcode;
+    if (clean.length < 12) return null;
+    const modelPart = clean.substring(1, 6);
+    const colorPart = clean.substring(6, 9);
+    const sizePart  = clean.substring(9, 12);
+    const tallaLabel = ROPA_SIZE_MAP[sizePart];
+    if (!tallaLabel) return null; // No es ropa conocida
+    const colorEntry = Object.entries(colorMap).find(([, code]) =>
+        String(code).padStart(3,'0') === colorPart.padStart(3,'0')
+    );
+    const colorName = colorEntry ? colorEntry[0] : `COLOR-${colorPart}`;
+    // vkey ropa: R|MODEL|COLOR|SIZECODE
+    const vkey = `R|${modelPart.replace(/[^A-Z0-9]/gi,'').toUpperCase()}|${colorName.toUpperCase()}|${sizePart}`;
+    return { mod: modelPart, color: colorName, talla: tallaLabel, vkey, category: 'ropa' as const, isSuspicious: false, isIncomplete: false };
+};
+
+
+
 // ─── ICONS ───────────────────────────────────────────────────────────────────
 const Icon = ({ d, size = 20, className = '', strokeWidth = 2 }: { d: string | string[]; size?: number; className?: string; strokeWidth?: number }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -233,6 +296,7 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
     const [newOperator, setNewOperator] = useState(() => appSession?.nombre || localStorage.getItem('conteo:user') || '');
     const [conflictSession, setConflictSession] = useState<ScanSession | null>(null);
     const [showConflict, setShowConflict] = useState(false);
+    const [modoRopa, setModoRopa] = useState(false);
     const deviceId = React.useMemo(() => {
         let id = localStorage.getItem('conteo:deviceId');
         if (!id) { id = crypto.randomUUID(); localStorage.setItem('conteo:deviceId', id); }
@@ -368,7 +432,9 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
         // Try catalog
         let item = catalog.byBarcode[clean];
         if (!item) {
-            const decoded = tryDecodeStructuredBarcode(clean, colors);
+            const decoded = modoRopa
+                ? decodeRopaBarcode(clean, colors)
+                : tryDecodeStructuredBarcode(clean, colors);
             if (decoded) item = { mod: decoded.mod, color: decoded.color, talla: decoded.talla, vkey: decoded.vkey, category: decoded.category };
         }
         if (item) { recognized = true; mod = item.mod; color = item.color; talla = item.talla; vkey = item.vkey; }
@@ -622,11 +688,21 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
                 <div>
                     <div className="flex items-center gap-2">
                         <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
-                        <span className="font-bold text-slate-800">{currentSession?.area}</span>
+                        <span className="font-bold text-slate-800 dark:text-white">{currentSession?.area}</span>
                     </div>
-                    <p className="text-xs text-slate-500 mt-0.5">{currentSession?.operator} · <span className="font-bold text-sky-600">{sessionItems.length}</span> escaneos</p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                        {currentSession?.operator} · <span className="font-bold text-sky-600">{sessionItems.length}</span> escaneos
+                        {modoRopa && <span className="ml-2 text-purple-600 font-bold">· 👕 Modo Ropa</span>}
+                    </p>
                 </div>
                 <div className="flex gap-2">
+                    <button
+                        onClick={() => setModoRopa(m => !m)}
+                        className={`flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg font-bold transition-all ${modoRopa ? 'bg-purple-500 text-white shadow' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 border'}`}
+                        title={modoRopa ? 'Modo Ropa ACTIVO — toca para desactivar' : 'Activar Modo Ropa'}
+                    >
+                        👕 {modoRopa ? 'ROPA' : 'Ropa'}
+                    </button>
                     <button onClick={exportCSV} className="flex items-center gap-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-lg font-semibold">
                         <Download size={14} /> CSV
                     </button>
@@ -1151,10 +1227,26 @@ const StockTab = ({ folioId, catalog, colors, onUpdate, addToast, sucursalId }: 
             const colorRaw = parts.slice(0, parts.length - 2).join(' ');
             if (isNaN(qty) || !modRaw || !colorRaw || !tallaRaw) continue;
             const cat = detectCategoryBySize(tallaRaw);
-            // UNI / UNITALLA → normalizar a "100" para que getSizeCode genere vkey correcto
-            const tallaNorm = (tallaRaw.toUpperCase() === 'UNI' || tallaRaw.toUpperCase() === 'UNITALLA') ? '100' : tallaRaw;
-            const vkey = keyOf(modRaw, colorRaw, tallaNorm, cat);
-            parsed.push({ mod: cleanModel(modRaw), color: canonical(colorRaw), talla: tallaNorm, qty, vkey, cat });
+            const uTalla = tallaRaw.toUpperCase().trim();
+            // UNI/UNITALLA → calzado unitalla
+            const isUni = uTalla === 'UNI' || uTalla === 'UNITALLA';
+            // Tallas de ropa (CH, M, G, XG, EXG y variantes con sufijo)
+            const isRopaTalla = !isUni && ['CH','M','G','XG','EXG','CHM','GEX','MEX','XCH','CHEX','GDE'].some(x => uTalla.startsWith(x) || uTalla === x);
+            let tallaNorm: string;
+            let catFinal: 'calzado' | 'ropa';
+            if (isUni) {
+                tallaNorm = '100'; catFinal = 'calzado';
+            } else if (isRopaTalla) {
+                tallaNorm = normalizeTallaRopa(tallaRaw);
+                catFinal = 'ropa';
+            } else {
+                tallaNorm = tallaRaw; catFinal = cat;
+            }
+            // Para ropa construir vkey manual con prefijo R|
+            const vkey = catFinal === 'ropa'
+                ? (() => { const code = ropaTallaToCode(tallaNorm); return code !== '000' ? \`R|\${cleanModel(modRaw)}|\${canonical(colorRaw)}|\${code}\` : keyOf(modRaw, colorRaw, tallaNorm, 'ropa'); })()
+                : keyOf(modRaw, colorRaw, tallaNorm, catFinal);
+            parsed.push({ mod: cleanModel(modRaw), color: canonical(colorRaw), talla: tallaNorm, qty, vkey, cat: catFinal });
         }
         setPreview(parsed); setStep(1);
     };
@@ -1515,8 +1607,10 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
 }) => {
     const [filter, setFilter] = useState<'all' | 'faltante' | 'sobrante' | 'ok' | 'parcial' | 'ajustes'>('all');
     const [searchMod, setSearchMod] = useState('');
-    const [sortBy, setSortBy]   = useState<'diff' | 'mod'>('diff');
-    const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+    const [sortBy, setSortBy]     = useState<'diff' | 'mod'>('diff');
+    const [sortDir, setSortDir]   = useState<'asc' | 'desc'>('asc');
+    const [filterTalla, setFilterTalla] = useState('');
+    const [filterColor, setFilterColor] = useState('');
     const [expandedKey, setExpandedKey] = useState<string | null>(null);
     const [printMode, setPrintMode] = useState<'completo' | 'simplificado'>('completo');
     const [vista, setVista] = useState<'reporte' | 'ajustes'>('reporte');
@@ -1555,8 +1649,10 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
             if (filter !== 'all' && filter !== 'ajustes' && r.status !== filter) return false;
             if (searchMod.trim()) {
                 const q = searchMod.trim().toLowerCase();
-                return r.mod.toLowerCase().includes(q) || r.color.toLowerCase().includes(q);
+                if (!r.mod.toLowerCase().includes(q) && !r.color.toLowerCase().includes(q)) return false;
             }
+            if (filterTalla && formatTallaConCategoria(r.talla, r.vkey) !== filterTalla) return false;
+            if (filterColor && r.color !== filterColor) return false;
             return true;
         });
         return rows.sort((a, b) => {
@@ -1564,7 +1660,7 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
             if (sortBy === 'mod') return mul * a.mod.localeCompare(b.mod);
             return mul * (a.diff - b.diff);
         });
-    }, [report.rows, filter, searchMod, sortBy, sortDir]);
+    }, [report.rows, filter, searchMod, sortBy, sortDir, filterTalla, filterColor]);
 
     const ajustesSugeridos = useMemo(() => {
         if (!folio) return [];
@@ -1603,7 +1699,7 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
 
     const exportCSV = () => {
         const header = 'Modelo,Color,Talla,Teórico,Físico,Diferencia,Estado\n';
-        const rows = report.rows.map(r => `${r.mod},${r.color},${formatTallaFromVkey(r.talla, r.vkey)},${r.teo},${r.fis},${r.diff},${r.status}`).join('\n');
+        const rows = report.rows.map(r => `${r.mod},${r.color},${formatTallaConCategoria(r.talla, r.vkey)},${r.teo},${r.fis},${r.diff},${r.status}`).join('\n');
         const blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a'); a.href = url; a.download = `reporte-${folio?.name}.csv`; a.click();
@@ -1838,7 +1934,7 @@ ${ajustesSugeridos.map(a => `
     <tr class="${r.status}">
       <td style="font-weight:600">${r.mod}</td>
       <td>${r.color}</td>
-      <td style="text-align:center">${formatTallaFromVkey(r.talla, r.vkey)}</td>
+      <td style="text-align:center">${formatTallaConCategoria(r.talla, r.vkey)}</td>
       <td style="text-align:center">${r.teo}</td>
       <td style="text-align:center">${r.fis}</td>
       <td style="text-align:center" class="${r.diff < 0 ? 'diff-neg' : r.diff > 0 ? 'diff-pos' : 'diff-zero'}">${r.diff > 0 ? '+' : ''}${r.diff}</td>
@@ -1983,6 +2079,30 @@ ${ajustesSugeridos.map(a => `
                             </button>
                         )}
                     </div>
+                    {/* Filtros adicionales: talla y color */}
+                    <div className="flex gap-2">
+                        <select
+                            className="flex-1 py-1.5 px-2 rounded-lg text-xs bg-slate-50 dark:bg-slate-800 border dark:border-slate-600 dark:text-white"
+                            value={filterTalla}
+                            onChange={e => setFilterTalla(e.target.value)}
+                        >
+                            <option value="">Todas las tallas</option>
+                            {[...new Set(report.rows.map(r => formatTallaConCategoria(r.talla, r.vkey)))].sort().map(t => (
+                                <option key={t} value={t}>{t}</option>
+                            ))}
+                        </select>
+                        <select
+                            className="flex-1 py-1.5 px-2 rounded-lg text-xs bg-slate-50 dark:bg-slate-800 border dark:border-slate-600 dark:text-white"
+                            value={filterColor}
+                            onChange={e => setFilterColor(e.target.value)}
+                        >
+                            <option value="">Todos los colores</option>
+                            {[...new Set(report.rows.map(r => r.color))].sort().map(c => (
+                                <option key={c} value={c}>{c}</option>
+                            ))}
+                        </select>
+                    </div>
+
                     {/* Ordenar */}
                     <div className="flex items-center gap-2">
                         <span className="text-xs text-slate-400 dark:text-slate-500 flex-shrink-0">Ordenar:</span>
@@ -2026,7 +2146,7 @@ ${ajustesSugeridos.map(a => `
                             <tr key={r.vkey} className={r.status} style={{ background: i % 2 === 0 ? '#f8fafc' : 'white' }}>
                                 <td style={{ padding: '5px 8px', fontSize: 10, fontWeight: 'bold', color: '#0f172a' }}>{r.mod}</td>
                                 <td style={{ padding: '5px 8px', fontSize: 10, color: '#475569' }}>{r.color}</td>
-                                <td style={{ padding: '5px 8px', fontSize: 10, color: '#475569', textAlign: 'center' }}>{formatTallaFromVkey(r.talla, r.vkey)}</td>
+                                <td style={{ padding: '5px 8px', fontSize: 10, color: '#475569', textAlign: 'center' }}>{formatTallaConCategoria(r.talla, r.vkey)}</td>
                                 <td style={{ padding: '5px 8px', fontSize: 10, textAlign: 'center', color: '#0f172a' }}>{r.teo}</td>
                                 <td style={{ padding: '5px 8px', fontSize: 10, textAlign: 'center', color: '#0ea5e9', fontWeight: 'bold' }}>{r.fis}</td>
                                 <td style={{ padding: '5px 8px', fontSize: 10, textAlign: 'center', fontWeight: 'bold', color: r.diff < 0 ? '#ef4444' : r.diff > 0 ? '#10b981' : '#94a3b8' }}>
@@ -2104,7 +2224,7 @@ ${ajustesSugeridos.map(a => `
                             { key: 'ok',       label: 'OK',       count: report.rows.filter(r => r.status === 'ok').length,         color: 'text-slate-400',  active: 'border-slate-500 text-slate-600' },
                             { key: 'ajustes',  label: 'Ajustes',  count: ajustesSugeridos.length,                                  color: 'text-amber-500',  active: 'border-amber-500 text-amber-600' },
                         ] as const).map(({ key, label, count, color, active }) => (
-                            <button key={key} onClick={() => { setFilter(key as any); setSearchMod(''); setSortBy('diff'); setSortDir('asc'); }}
+                            <button key={key} onClick={() => { setFilter(key as any); setSearchMod(''); setSortBy('diff'); setSortDir('asc'); setFilterTalla(''); setFilterColor(''); }}
                                 className={`flex-shrink-0 flex flex-col items-center px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors ${
                                     filter === key
                                         ? active
@@ -2306,7 +2426,7 @@ ${ajustesSugeridos.map(a => `
                 {filtered.map(r => (
                     <div key={r.vkey} className="bg-white rounded-xl border overflow-hidden shadow-sm">
                         <button onClick={() => setExpandedKey(expandedKey === r.vkey ? null : r.vkey)} className="w-full text-left px-4 py-3 flex items-center gap-2">
-                            <div className="flex-1 min-w-0"><p className="text-sm font-semibold text-slate-800 truncate">{r.mod}</p><p className="text-xs text-slate-500">{r.color} · Talla {formatTallaFromVkey(r.talla, r.vkey)}</p></div>
+                            <div className="flex-1 min-w-0"><p className="text-sm font-semibold text-slate-800 truncate">{r.mod}</p><p className="text-xs text-slate-500">{r.color} · Talla {formatTallaConCategoria(r.talla, r.vkey)}</p></div>
                             <div className="flex items-center gap-2 flex-shrink-0">
                                 <span className="text-sm font-bold text-slate-700"><span className="text-sky-600">{r.fis}</span><span className="text-slate-300">/</span><span className="text-slate-500">{r.teo}</span></span>
                                 <span className={`text-sm font-bold w-8 text-right ${r.diff < 0 ? 'text-red-500' : r.diff > 0 ? 'text-emerald-500' : 'text-slate-400'}`}>{r.diff > 0 ? '+' : ''}{r.diff}</span>
@@ -2479,7 +2599,7 @@ const UbicacionesTab = ({ sucursalId, folio, scans, addToast }: {
                                     {items.map(u => (
                                         <div key={u.vkey} className="px-4 py-3 flex items-center justify-between">
                                             <div>
-                                                <p className="text-sm font-semibold text-slate-800 dark:text-white">{u.mod} · {u.color} · {formatTallaFromVkey(u.talla, u.vkey)}</p>
+                                                <p className="text-sm font-semibold text-slate-800 dark:text-white">{u.mod} · {u.color} · {formatTallaConCategoria(u.talla, u.vkey)}</p>
                                                 <p className="text-xs text-slate-400">{new Date(u.updatedAt).toLocaleDateString('es-MX')} · {u.folioName}</p>
                                             </div>
                                             <div className="text-right">
@@ -2498,7 +2618,7 @@ const UbicacionesTab = ({ sucursalId, folio, scans, addToast }: {
                         {filtered.map(u => (
                             <div key={u.vkey} className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 px-4 py-3 flex items-center gap-3">
                                 <div className="flex-1 min-w-0">
-                                    <p className="font-bold text-slate-800 dark:text-white text-sm truncate">{u.mod} · {u.color} · {formatTallaFromVkey(u.talla, u.vkey)}</p>
+                                    <p className="font-bold text-slate-800 dark:text-white text-sm truncate">{u.mod} · {u.color} · {formatTallaConCategoria(u.talla, u.vkey)}</p>
                                     <div className="flex items-center gap-2 mt-0.5">
                                         <span className="text-[11px] bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400 px-2 py-0.5 rounded-full font-medium">
                                             📍 {u.area}
@@ -2558,7 +2678,7 @@ const QueryTab = ({ folio, scans }: { folio: Folio | null; scans: Scan[] }) => {
             {results.map(r => (
                 <div key={r.vkey} className="bg-white rounded-xl border shadow-sm p-4">
                     <div className="flex justify-between items-start">
-                        <div><p className="font-bold text-slate-800">{r.mod}</p><p className="text-sm text-slate-500">{r.color} · Talla {formatTallaFromVkey(r.talla, r.vkey)}</p></div>
+                        <div><p className="font-bold text-slate-800">{r.mod}</p><p className="text-sm text-slate-500">{r.color} · Talla {formatTallaConCategoria(r.talla, r.vkey)}</p></div>
                         <div className="text-right"><p className="text-xs text-slate-400">Teo / Fís</p><p className="text-lg font-bold">{r.teo} / <span className={r.fis >= r.teo ? 'text-emerald-600' : 'text-red-500'}>{r.fis}</span></p></div>
                     </div>
                     {Object.keys(r.areaMap).length > 0 && (

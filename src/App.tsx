@@ -52,6 +52,7 @@ const DAMA_SIZE_MAP: Record<string, string> = {
     '128': 'XG',
     '113': 'EXG', '130': 'EXG',
     '114': 'XXG',
+    '990': 'UNI', // Unitalla ropa
 };
 
 // Niña / infantil numérico (05, 07, 09, 11, 13, 15...)
@@ -61,6 +62,7 @@ const NIÑA_SIZE_MAP: Record<string, string> = {
     '090': '9',  '100': '10', '110': '11',
     '120': '12', '130': '13', '140': '14',
     '150': '15', '160': '16',
+    '990': 'UNI', // Unitalla ropa
 };
 
 // Jeans / pantalón hombre (28-50)
@@ -201,22 +203,31 @@ const decodeRopaBarcode = (barcode: string, colorMap: Record<string, string>) =>
     const modKey = modelPart.replace(/[^A-Z0-9]/gi, '').toUpperCase();
     const sistema: SizeSystem = sizeSystemByModel[modKey] || 'dama';
     const activeMap = getSizeMapForSystem(sistema);
-    let tallaLabel = activeMap[sizePart];
 
-    // Si no encontró en el mapa del sistema registrado, buscar en todos (seguridad extra)
-    if (!tallaLabel) {
-        for (const map of ALL_ROPA_MAPS) {
-            if (map[sizePart]) { tallaLabel = map[sizePart]; break; }
+    // Caso especial: sizePart 100 en modo ropa = UNI de ropa (no calzado unitalla)
+    let tallaLabel: string | undefined;
+    if (sizePart === '100') {
+        tallaLabel = 'UNI';
+    } else {
+        tallaLabel = activeMap[sizePart];
+        // Si no encontró en el mapa del sistema registrado, buscar en todos (seguridad extra)
+        if (!tallaLabel) {
+            for (const map of ALL_ROPA_MAPS) {
+                if (map[sizePart]) { tallaLabel = map[sizePart]; break; }
+            }
         }
     }
     if (!tallaLabel) return null; // Código de talla desconocido para ropa
+
+    // Para UNI de ropa usamos código interno 990 en el vkey (separado del 100 de calzado)
+    const sizeCodeForVkey = sizePart === '100' ? '990' : sizePart;
 
     const colorEntry = Object.entries(colorMap).find(([, code]) =>
         String(code).padStart(3,'0') === colorPart.padStart(3,'0')
     );
     const colorName = colorEntry ? colorEntry[0] : `COLOR-${colorPart}`;
-    // vkey ropa: R|MODEL|COLOR|SIZECODE
-    const vkey = `R|${modKey}|${colorName.toUpperCase()}|${sizePart}`;
+    // vkey ropa: R|MODEL|COLOR|SIZECODE  (UNI usa 990, no 100, para no colisionar con calzado)
+    const vkey = `R|${modKey}|${colorName.toUpperCase()}|${sizeCodeForVkey}`;
     return { mod: modelPart, color: colorName, talla: tallaLabel, vkey, category: 'ropa' as const, isSuspicious: false, isIncomplete: false };
 };
 
@@ -1366,7 +1377,18 @@ const StockTab = ({ folioId, catalog, colors, onUpdate, addToast, sucursalId }: 
             let ropaCode = '000';
 
             if (isUni) {
-                tallaNorm = '100'; catFinal = 'calzado';
+                // UNI puede ser calzado O ropa — el modelo decide.
+                // Si el modelo ya tiene sistema de ropa registrado → ropa UNI
+                // Si no → calzado unitalla (comportamiento original)
+                const modKey = cleanModel(modRaw);
+                const sistemaExistente = sizeSystemByModel[modKey];
+                if (sistemaExistente) {
+                    catFinal = 'ropa';
+                    tallaNorm = 'UNI';
+                    ropaCode = '990'; // Código interno dedicado para ropa UNI
+                } else {
+                    tallaNorm = '100'; catFinal = 'calzado';
+                }
             } else if (isRopaTalla) {
                 catFinal = 'ropa';
                 const modKey = cleanModel(modRaw);

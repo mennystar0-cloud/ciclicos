@@ -268,21 +268,26 @@ const decodeRopaBarcode = (barcode: string, colorMap: Record<string, string>) =>
     const sistema: SizeSystem = sizeSystemByModel[modKey] || 'dama';
     const activeMap = getSizeMapForSystem(sistema);
 
-    // sizePart 100 = UNI para todos los sistemas excepto brasier y bebe
     let tallaLabel: string | undefined;
     let sizeCodeForVkey = sizePart;
 
-    if (sizePart === '100' && sistema !== 'brasier' && sistema !== 'bebe' && sistema !== 'jeans_dama') {
-        tallaLabel = 'UNI';
-        sizeCodeForVkey = '990';
-    } else {
-        tallaLabel = activeMap[sizePart];
-        if (!tallaLabel) {
-            for (const map of ALL_ROPA_MAPS) {
-                if (map[sizePart]) { tallaLabel = map[sizePart]; break; }
-            }
+    // Buscar primero en el mapa del sistema registrado
+    tallaLabel = activeMap[sizePart];
+
+    // Si no encontró, buscar en todos los mapas
+    if (!tallaLabel) {
+        for (const map of ALL_ROPA_MAPS) {
+            if (map[sizePart]) { tallaLabel = map[sizePart]; break; }
         }
     }
+
+    // sizePart 100 = UNI solo si el sistema es dama Y no hay otro candidato
+    // (brasier y bebe tambien usan 100 pero tienen sistema registrado)
+    if (!tallaLabel && sizePart === '100') {
+        tallaLabel = 'UNI';
+        sizeCodeForVkey = '990';
+    }
+
     if (!tallaLabel) return null;
 
     const colorEntry = Object.entries(colorMap).find(([, code]) =>
@@ -3971,14 +3976,17 @@ const App: React.FC = () => {
 
         // Reconstruir sizeSystemByModel desde marcadores guardados en Firebase
         // Formato marcador: R|MODEL|__SYS__|sistema  (qty=0, no es inventario real)
+        let marcadoresLeidos = 0;
         for (const vkey of vkeys) {
             if (!vkey.startsWith('R|')) continue;
             const p = vkey.split('|');
             // Marcador: p[2] === '__SYS__', p[3] = sistema
             if (p[2] === '__SYS__' && p[3]) {
                 sizeSystemByModel[p[1]] = p[3] as SizeSystem;
+                marcadoresLeidos++;
             }
         }
+        console.log('[SYS] Marcadores leidos:', marcadoresLeidos, Object.entries(sizeSystemByModel).slice(0,5));
         // Fallback para modelos sin marcador: inferir por sizePart
         for (const vkey of vkeys) {
             if (!vkey.startsWith('R|')) continue;

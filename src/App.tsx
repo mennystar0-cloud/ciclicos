@@ -119,6 +119,7 @@ const ALL_ROPA_MAPS = [
 // Sistema de tallas por modelo — se construye al parsear el teorico
 type SizeSystem = 'dama' | 'jeans_dama' | 'jeans_cab' | 'bebe' | 'brasier' | 'anos';
 const sizeSystemByModel: Record<string, SizeSystem> = {};
+(window as any).__sysMap = sizeSystemByModel; // DEBUG: accesible desde consola
 
 const getSizeMapForSystem = (sys: SizeSystem): Record<string, string> => {
     if (sys === 'jeans_dama') return JEANS_DAMA_SIZE_MAP;
@@ -3986,7 +3987,10 @@ const App: React.FC = () => {
                 marcadoresLeidos++;
             }
         }
-        console.log('[SYS] Marcadores leidos:', marcadoresLeidos, Object.entries(sizeSystemByModel).slice(0,5));
+        console.log('[SYS] Marcadores leidos:', marcadoresLeidos);
+        console.log('[SYS] 82083:', sizeSystemByModel['82083']);
+        console.log('[SYS] 82035:', sizeSystemByModel['82035']);
+        console.log('[SYS] Todos los sistemas:', Object.entries(sizeSystemByModel).filter(([,v]) => v === 'brasier'));
         // Fallback para modelos sin marcador: inferir por sizePart
         for (const vkey of vkeys) {
             if (!vkey.startsWith('R|')) continue;

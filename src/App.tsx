@@ -1482,7 +1482,21 @@ const StockTab = ({ folioId, catalog, colors, onUpdate, addToast, sucursalId }: 
                 }
             }
 
-            // 4. Solo guardar folio en Firebase — el catálogo se reconstruye automáticamente
+            // 4. Guardar marcadores de sistema de tallas en el mapa
+            // Formato: R|MODEL|__SYS__|sistema  qty=0
+            // Permite reconstruir sizeSystemByModel desde Firebase sin necesidad del parseRaw
+            const sistemas = new Map<string, string>();
+            for (const [vkey] of Object.entries(mergedMap)) {
+                if (!vkey.startsWith('R|')) continue;
+                const p = vkey.split('|');
+                const mod = p[1]; const sys = sizeSystemByModel[mod];
+                if (mod && sys) sistemas.set(mod, sys);
+            }
+            for (const [mod, sys] of sistemas) {
+                mergedMap[`R|${mod}|__SYS__|${sys}`] = 0;
+            }
+
+            // 5. Solo guardar folio en Firebase — el catálogo se reconstruye automáticamente
             await fbUpdateFolio({ ...folio, theoreticalMap: mergedMap, sucursalId });
 
             onUpdate();
@@ -3942,13 +3956,44 @@ const App: React.FC = () => {
         if (!folio?.theoreticalMap) { setCatalog({ byBarcode: {}, byVariant: {} }); return; }
         const byVariant: Catalog['byVariant'] = {};
         const byBarcode: Catalog['byBarcode'] = {};
-        for (const vkey of Object.keys(folio.theoreticalMap)) {
+        const tMap = folio.theoreticalMap;
+        const vkeys = Object.keys(tMap);
+
+        for (const vkey of vkeys) {
+            // Ignorar marcadores de sistema (__SYS__) — no son inventario real
+            if (vkey.includes('|__SYS__|')) continue;
             const parts = splitKey(vkey);
             if (!parts.mod) continue;
             const item = { mod: parts.mod, color: parts.color || '', talla: parts.talla || '', vkey, category: parts.category };
             byVariant[vkey] = item;
             if (parts.barcode) byBarcode[parts.barcode] = item;
         }
+
+        // Reconstruir sizeSystemByModel desde marcadores guardados en Firebase
+        // Formato marcador: R|MODEL|__SYS__|sistema  (qty=0, no es inventario real)
+        for (const vkey of vkeys) {
+            if (!vkey.startsWith('R|')) continue;
+            const p = vkey.split('|');
+            // Marcador: p[2] === '__SYS__', p[3] = sistema
+            if (p[2] === '__SYS__' && p[3]) {
+                sizeSystemByModel[p[1]] = p[3] as SizeSystem;
+            }
+        }
+        // Fallback para modelos sin marcador: inferir por sizePart
+        for (const vkey of vkeys) {
+            if (!vkey.startsWith('R|')) continue;
+            const p = vkey.split('|');
+            if (p[2] === '__SYS__') continue; // ya procesado
+            const modKey = p[1] || '';
+            if (!modKey || sizeSystemByModel[modKey]) continue;
+            const sp = parseInt(p[3] || '0');
+            if (sp >= 101 && sp <= 105)  { sizeSystemByModel[modKey] = 'bebe'; continue; }
+            if (sp === 160)               { sizeSystemByModel[modKey] = 'brasier'; continue; }
+            if (sp >= 280 && sp <= 500)   { sizeSystemByModel[modKey] = 'jeans_cab'; continue; }
+            if ([30,50,70,90,110,130,150].includes(sp)) { sizeSystemByModel[modKey] = 'jeans_dama'; continue; }
+            sizeSystemByModel[modKey] = 'dama';
+        }
+
         setCatalog({ byVariant, byBarcode });
     }, [folio?.theoreticalMap]);
 

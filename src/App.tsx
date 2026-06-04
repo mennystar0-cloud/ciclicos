@@ -558,9 +558,11 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
 
     const doStartSession = async (area: string, operator: string, opId?: string): Promise<string> => {
         setLoading(true);
+        addToast('Paso 1: borrando sesion previa...', 'info');
         const prevId = localStorage.getItem('conteo:sessionId');
         if (prevId) { await fbDeleteSession(prevId, sucursalId).catch(() => {}); }
         const id = 'SS-' + Date.now().toString(36).toUpperCase();
+        addToast('Paso 2: creando sesion ' + id, 'info');
         const session: ScanSession = {
             id, area: area.toUpperCase(), operator,
             operadorId: opId ?? appSession?.operadorId,
@@ -569,7 +571,14 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
             createdAt: Date.now(), count: 0,
             lastSeen: Date.now(),
         };
-        await fbCreateScanSession(session);
+        try {
+            await fbCreateScanSession(session);
+            addToast('Paso 3: sesion guardada OK', 'success');
+        } catch (fbErr: any) {
+            addToast('ERROR Firebase: ' + (fbErr?.message || String(fbErr)), 'error');
+            setLoading(false);
+            throw fbErr;
+        }
         localStorage.setItem('conteo:sessionId', id);
         localStorage.setItem('conteo:user', operator);
         setCurrentSession(session);
@@ -584,11 +593,12 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
     const startNewSession = async () => {
         if (!newArea.trim()) { addToast('Escribe el area a escanear', 'warning'); return; }
         const operatorName = appSession?.nombre || newOperator.trim() || 'Scanner';
+        addToast('Iniciando: area=' + newArea.trim() + ' op=' + operatorName, 'info');
 
         try {
-            // Verificar conflicto de sesion en otro dispositivo
             if (appSession?.operadorId) {
                 setLoading(true);
+                addToast('Verificando conflictos...', 'info');
                 const allSessions = await fbGetAllSessions(sucursalId ?? undefined).catch(() => []);
                 setLoading(false);
                 const activeSession = (allSessions as ScanSession[]).find(
@@ -607,8 +617,7 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
             setTimeout(() => inputRef.current?.focus(), 300);
         } catch (err) {
             setLoading(false);
-            addToast('Error al iniciar sesion. Intenta de nuevo.', 'error');
-            alert('Error: ' + ((err as any)?.message || String(err)));
+            addToast('CATCH ERROR: ' + ((err as any)?.message || String(err)), 'error');
             console.error('startNewSession error:', err);
         }
     };

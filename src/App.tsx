@@ -43,59 +43,67 @@ const formatTallaFromVkey = (talla: string, vkey?: string): string => {
 // ─── TALLAS DE ROPA ───────────────────────────────────────────────────────────
 // Cada sistema de tallas tiene su propio mapa: sizePart (3 dígitos) → etiqueta legible
 
-// ── Dama / adulto letras ──────────────────────────────────────────────────────
+// ── SISTEMAS DE TALLAS DE ROPA ───────────────────────────────────────────────
+// Todos los mapas usan sizePart (posiciones 9-11 del barcode EAN-13)
+// Las colisiones entre sistemas se resuelven via sizeSystemByModel
+
+// ── 1. DAMA LETRAS ────────────────────────────────────────────────────────────
+// Verificado con barcodes reales: CHI=100, MED=110, GDE=120, EXG=130, XXG=140, XCH=128, 3EG=150
 const DAMA_SIZE_MAP: Record<string, string> = {
-    '095': 'XCH',
-    '100': 'CH',  '108': 'CHI',
-    '107': 'MED', '110': 'M',
-    '112': 'GDE', '120': 'G',
-    '128': 'XG',
-    '113': 'EXG', '130': 'EXG',
-    '114': 'XXG',
-    '150': '3EG', // Triple extra grande
-    '990': 'UNI', // Unitalla ropa
+    '100': 'CH',  // CHI, CHM → normalizado a CH
+    '107': 'MED', // alias previo — mantener por compatibilidad
+    '108': 'CHI', // alias previo
+    '110': 'M',   // MED
+    '112': 'GDE', // alias previo
+    '120': 'G',   // GDE, GEX → normalizado a G
+    '128': 'XCH',
+    '113': 'EXG', // alias previo
+    '130': 'EXG',
+    '140': 'XXG',
+    '150': '3EG',
+    '990': 'UNI', // Unitalla ropa (codigo interno, no aparece en barcode)
 };
 
-// ── Niña / infantil numérico (030-160) ────────────────────────────────────────
-const NINA_SIZE_MAP: Record<string, string> = {
-    '030': '3',  '040': '4',  '050': '5',
-    '060': '6',  '070': '7',  '080': '8',
-    '090': '9',  '100': '10', '110': '11',
-    '120': '12', '130': '13', '140': '14',
-    '150': '15', '160': '16',
+// ── 2. JEANS DAMA (tallas 3-15, impares) ─────────────────────────────────────
+// Verificado: 050→5, 070→7, 090→9, 110→11, 130→13, 150→15, 030→3
+// sizePart = numero de talla con cero al final (5→050, 7→070...)
+const JEANS_DAMA_SIZE_MAP: Record<string, string> = {
+    '030': '3',  '050': '5',  '070': '7',
+    '090': '9',  '110': '11', '130': '13',
+    '150': '15',
     '990': 'UNI',
 };
 
-// ── Jeans / pantalón hombre (28-50) ───────────────────────────────────────────
-const JEANS_SIZE_MAP: Record<string, string> = {
-    '280': '28', '290': '29', '300': '30',
-    '310': '31', '320': '32', '330': '33',
-    '340': '34', '350': '35', '360': '36',
-    '370': '37', '380': '38', '390': '39',
+// ── 3. JEANS CABALLERO (tallas 28-50) ────────────────────────────────────────
+// Verificado: 300→30, 320→32, 340→34, 360→36, 380→38
+// sizePart = talla * 10
+const JEANS_CAB_SIZE_MAP: Record<string, string> = {
+    '280': '28', '300': '30', '320': '32',
+    '340': '34', '360': '36', '380': '38',
     '400': '40', '420': '42', '440': '44',
-    '460': '46', '480': '48', '500': '50',
 };
 
-// ── Bebé en meses ─────────────────────────────────────────────────────────────
+// ── 4. BEBE EN MESES ──────────────────────────────────────────────────────────
+// Verificado: 100→3M, 101→6M, 102→9M, 103→12M, 104→18M, 105→24M
+// sizePart = indice secuencial desde 100
 const BEBE_SIZE_MAP: Record<string, string> = {
-    '003': '3M',  '006': '6M',  '009': '9M',
-    '012': '12M', '018': '18M', '024': '24M',
+    '100': '3M',  '101': '6M',  '102': '9M',
+    '103': '12M', '104': '18M', '105': '24M',
 };
 
-// ── Brasier (talla numérica + copa B/C/D) ─────────────────────────────────────
-// sizePart: base (32→100, 34→110, 36→120, 38→130, 40→140) + copa offset (B=0,C=1,D=2)
-// Barcodes reales: 32B→100, 34B→110, 36B→120, 38B→130
+// ── 5. BRASIER (talla + copa) ─────────────────────────────────────────────────
+// Verificado: 32B→100, 34B→110, 36B→120, 38B→130, 40C→160
+// Copa B: sizePart = (talla-30)*10 + 100  → 32→100, 34→110, 36→120, 38→130
+// Copa C en 40: sizePart = 160
 const BRASIER_SIZE_MAP: Record<string, string> = {
-    '100': '32B', '101': '32C', '102': '32D',
-    '110': '34B', '111': '34C', '112': '34D',
-    '120': '36B', '121': '36C', '122': '36D',
-    '130': '38B', '131': '38C', '132': '38D',
-    '140': '40B', '141': '40C', '142': '40D',
+    '100': '32B', '110': '34B',
+    '120': '36B', '130': '38B',
+    '160': '40C',
     '990': 'UNI',
 };
 
-// ── Infantil en años (02A-12A) ────────────────────────────────────────────────
-// Patrón barcode real: 04A→113, 06A→117, 08A→121, 10A→122/125
+// ── 6. INFANTIL EN ANOS (02A-12A) ─────────────────────────────────────────────
+// Verificado: 04A→113, 06A→117, 08A→121, 10A→122/125
 const ANOS_SIZE_MAP: Record<string, string> = {
     '109': '2A',  '113': '4A',  '117': '6A',
     '121': '8A',  '122': '10A', '125': '10A',
@@ -103,106 +111,134 @@ const ANOS_SIZE_MAP: Record<string, string> = {
 };
 
 // ── Todos los mapas para lookup exhaustivo ────────────────────────────────────
-const ALL_ROPA_MAPS = [DAMA_SIZE_MAP, NINA_SIZE_MAP, JEANS_SIZE_MAP, BEBE_SIZE_MAP, BRASIER_SIZE_MAP, ANOS_SIZE_MAP];
+const ALL_ROPA_MAPS = [
+    DAMA_SIZE_MAP, JEANS_DAMA_SIZE_MAP, JEANS_CAB_SIZE_MAP,
+    BEBE_SIZE_MAP, BRASIER_SIZE_MAP, ANOS_SIZE_MAP,
+];
 
-// Sistema de tallas por modelo — se construye automáticamente al parsear el teórico
-type SizeSystem = 'dama' | 'nina' | 'jeans' | 'bebe' | 'brasier' | 'anos';
+// Sistema de tallas por modelo — se construye al parsear el teorico
+type SizeSystem = 'dama' | 'jeans_dama' | 'jeans_cab' | 'bebe' | 'brasier' | 'anos';
 const sizeSystemByModel: Record<string, SizeSystem> = {};
 
 const getSizeMapForSystem = (sys: SizeSystem): Record<string, string> => {
-    if (sys === 'nina')    return NINA_SIZE_MAP;
-    if (sys === 'jeans')   return JEANS_SIZE_MAP;
-    if (sys === 'bebe')    return BEBE_SIZE_MAP;
-    if (sys === 'brasier') return BRASIER_SIZE_MAP;
-    if (sys === 'anos')    return ANOS_SIZE_MAP;
+    if (sys === 'jeans_dama') return JEANS_DAMA_SIZE_MAP;
+    if (sys === 'jeans_cab')  return JEANS_CAB_SIZE_MAP;
+    if (sys === 'bebe')       return BEBE_SIZE_MAP;
+    if (sys === 'brasier')    return BRASIER_SIZE_MAP;
+    if (sys === 'anos')       return ANOS_SIZE_MAP;
     return DAMA_SIZE_MAP;
 };
 
 /**
- * Detecta el sistema de tallas a partir de la talla en texto (parseo del teórico).
- * Registra el resultado en sizeSystemByModel para usarlo al escanear.
+ * Detecta el sistema de tallas a partir de la talla en texto (parseo del teorico).
+ * Registra el resultado en sizeSystemByModel.
  */
 const detectSistemaByTalla = (tallaRaw: string, modKey: string): SizeSystem => {
     const u = tallaRaw.toUpperCase().trim();
-    // Meses: 3M, 6M, 12M...
+    // Bebe meses: 3M, 6M, 9M, 12M, 18M, 24M
     if (/^\d{1,2}M$/.test(u)) { sizeSystemByModel[modKey] = 'bebe'; return 'bebe'; }
-    // Brasier: 32B, 34C, 40D... (2 dígitos + letra copa A-D)
+    // Brasier: 32B, 34B, 36B, 38B, 40C, 40D
     if (/^\d{2}[ABCD]$/.test(u)) { sizeSystemByModel[modKey] = 'brasier'; return 'brasier'; }
-    // Infantil años: 02A, 04A, 06A, 08A, 10A, 12A
+    // Infantil anos: 02A, 04A, 06A, 08A, 10A, 12A
     if (/^(0[2-9]|1[02])A$/i.test(u)) { sizeSystemByModel[modKey] = 'anos'; return 'anos'; }
-    // Numérico puro
+    // Numerico puro
     const n = parseInt(u.replace(/[^0-9]/g, ''));
     if (!isNaN(n)) {
-        if (n >= 28 && n <= 50) { sizeSystemByModel[modKey] = 'jeans';  return 'jeans'; }
-        if (n >= 3  && n <= 16) { sizeSystemByModel[modKey] = 'nina';   return 'nina'; }
+        // Jeans caballero: 28-50 en pasos de 2 (valores como 28,30,32... o 280,300,320...)
+        const nNorm = n > 50 ? n / 10 : n; // normalizar si viene como 300→30
+        if (nNorm >= 28 && nNorm <= 50 && nNorm % 2 === 0) {
+            sizeSystemByModel[modKey] = 'jeans_cab'; return 'jeans_cab';
+        }
+        // Jeans dama: 3-15 impares (3,5,7,9,11,13,15) o con cero (030,050...)
+        const nBase = n > 15 ? n / 10 : n; // normalizar si viene como 050→5
+        if (nBase >= 3 && nBase <= 15 && nBase % 2 === 1) {
+            sizeSystemByModel[modKey] = 'jeans_dama'; return 'jeans_dama';
+        }
     }
-    // Letras tipo dama (CH, M, G, XG, EXG, CHI, MED, GDE, XXG, 3EG...)
+    // Letras dama (CH, M, G, XG, EXG, XCH, CHI, MED, GDE, XXG, 3EG, CHM, GEX...)
     sizeSystemByModel[modKey] = 'dama';
     return 'dama';
 };
 
 /**
- * Normaliza la talla del teórico a su etiqueta canónica según sistema.
+ * Normaliza la talla del teorico a su etiqueta canonica segun sistema.
  */
 const normalizeTallaRopa = (t: string, sistema: SizeSystem = 'dama'): string => {
     const u = t.toUpperCase().trim();
-    if (sistema === 'bebe')    return u;
-    if (sistema === 'jeans')   return u;
-    if (sistema === 'nina')    return u;
-    if (sistema === 'brasier') return u;
-    if (sistema === 'anos')    return u;
-    // Dama: normalizar variantes
-    if (u === '3EG')                               return '3EG';
-    if (u.startsWith('XXG'))                       return 'XXG';
-    if (u.startsWith('EXG'))                       return 'EXG';
-    if (u.startsWith('XG'))                        return 'XG';
-    if (u.startsWith('XCH'))                       return 'XCH';
-    if (u.startsWith('CHI') || u.startsWith('CHM') || u.startsWith('CH')) return 'CH';
-    if (u === 'MED' || u.startsWith('ME') || u === 'M') return 'M';
-    if (u.startsWith('GDE') || u.startsWith('GEX') || u.startsWith('GE') || u === 'G') return 'G';
+    if (sistema === 'bebe')      return u;
+    if (sistema === 'brasier')   return u;
+    if (sistema === 'anos')      return u;
+    if (sistema === 'jeans_cab') {
+        // Normalizar: 300→30, 32→32 (ya es correcto)
+        const n = parseInt(u.replace(/[^0-9]/g, ''));
+        return !isNaN(n) ? String(n > 50 ? n / 10 : n) : u;
+    }
+    if (sistema === 'jeans_dama') {
+        // Normalizar: 050→5, 07→7, 9→9
+        const n = parseInt(u.replace(/[^0-9]/g, ''));
+        return !isNaN(n) ? String(n > 15 ? n / 10 : n) : u;
+    }
+    // Dama: normalizar variantes textuales
+    if (u === '3EG')                                        return '3EG';
+    if (u.startsWith('XXG'))                                return 'XXG';
+    if (u.startsWith('EXG'))                                return 'EXG';
+    if (u.startsWith('XG'))                                 return 'XG';
+    if (u.startsWith('XCH'))                                return 'XCH';
+    if (u === 'CHM' || u === 'CHI' || u.startsWith('CH'))  return 'CH';
+    if (u === 'MED' || u === 'M')                           return 'M';
+    if (u === 'GDE' || u === 'GEX' || u === 'G')           return 'G';
     return u;
 };
 
 /**
- * Convierte la etiqueta de talla (legible) al código de 3 dígitos para el vkey.
+ * Convierte la etiqueta de talla al sizePart de 3 digitos para el vkey.
  */
 const ropaTallaToCode = (tallaLabel: string, sistema: SizeSystem = 'dama'): string => {
     const map = getSizeMapForSystem(sistema);
+    // Buscar en el mapa (primera entrada que coincida)
     const entry = Object.entries(map).find(([, v]) => v === tallaLabel);
     if (entry) return entry[0];
-    if (sistema === 'jeans' || sistema === 'nina') {
-        const n = parseInt(tallaLabel.replace(/[^0-9]/g, ''));
-        if (!isNaN(n)) return String(n * 10).padStart(3, '0').slice(-3);
+    // Fallback jeans cab: talla*10
+    if (sistema === 'jeans_cab') {
+        const n = parseInt(tallaLabel);
+        if (!isNaN(n)) return String(n * 10).padStart(3, '0');
     }
+    // Fallback jeans dama: talla*10 con padding
+    if (sistema === 'jeans_dama') {
+        const n = parseInt(tallaLabel);
+        if (!isNaN(n)) return String(n * 10).padStart(3, '0');
+    }
+    // Fallback bebe: indice secuencial
     if (sistema === 'bebe') {
-        const n = parseInt(tallaLabel.replace(/[^0-9]/g, ''));
-        if (!isNaN(n)) return String(n).padStart(3, '0');
+        const orden = ['3M','6M','9M','12M','18M','24M'];
+        const idx = orden.indexOf(tallaLabel);
+        if (idx >= 0) return String(100 + idx).padStart(3, '0');
     }
+    // Fallback brasier
     if (sistema === 'brasier') {
         const m = tallaLabel.match(/^(\d{2})([ABCD])$/);
         if (m) {
+            if (m[1] === '40' && m[2] === 'C') return '160';
             const base = (parseInt(m[1]) - 30) * 10 + 100;
-            const copa: Record<string, number> = { A: 0, B: 0, C: 1, D: 2 };
-            return String(base + (copa[m[2]] ?? 0)).padStart(3, '0');
+            return String(base).padStart(3, '0');
         }
     }
+    // Fallback anos
     if (sistema === 'anos') {
         const m = tallaLabel.match(/^(\d{1,2})A$/i);
-        if (m) {
-            const a = parseInt(m[1]);
-            return String(109 + (a / 2 - 1) * 4).padStart(3, '0');
-        }
+        if (m) return String(109 + (parseInt(m[1]) / 2 - 1) * 4).padStart(3, '0');
     }
     return '000';
 };
 
 /**
- * Dado un vkey de ropa (R|MODEL|COLOR|SIZECODE), devuelve la etiqueta legible de la talla.
+ * Dado un vkey de ropa, devuelve la etiqueta legible de la talla.
  */
 const tallaFromRopaVkey = (vkey: string): string => {
     const parts = vkey.split('|');
-    const sizePart = parts[3] || parts[2] || '000';
+    const sizePart = parts[3] || '000';
     const modKey = parts[1] || '';
+    if (sizePart === '990') return 'UNI';
     const sistema = sizeSystemByModel[modKey];
     if (sistema) {
         const label = getSizeMapForSystem(sistema)[sizePart];
@@ -211,24 +247,16 @@ const tallaFromRopaVkey = (vkey: string): string => {
     for (const map of ALL_ROPA_MAPS) {
         if (map[sizePart]) return map[sizePart];
     }
-    const n = parseInt(sizePart);
-    if (!isNaN(n)) {
-        if (n >= 280 && n <= 500) return String(n / 10);
-        if (n >= 30  && n <= 160) return String(n / 10);
-        if (n >= 3   && n <= 24)  return `${n}M`;
-    }
     return sizePart;
 };
 
-// Formatear talla considerando categoría
 const formatTallaConCategoria = (talla: string, vkey?: string): string => {
     if (!vkey) return formatTallaFromVkey(talla, vkey);
-    const isRopa = vkey.startsWith('R|');
-    if (!isRopa) return formatTallaFromVkey(talla, vkey);
+    if (!vkey.startsWith('R|')) return formatTallaFromVkey(talla, vkey);
     return tallaFromRopaVkey(vkey);
 };
 
-// Decodificar código de barras de ROPA
+// Decodificar codigo de barras de ROPA
 const decodeRopaBarcode = (barcode: string, colorMap: Record<string, string>) => {
     const clean = barcode.length === 12 ? '0' + barcode : barcode;
     if (clean.length < 12) return null;
@@ -240,11 +268,11 @@ const decodeRopaBarcode = (barcode: string, colorMap: Record<string, string>) =>
     const sistema: SizeSystem = sizeSystemByModel[modKey] || 'dama';
     const activeMap = getSizeMapForSystem(sistema);
 
-    // sizePart 100 con sistema dama/años/jeans/bebe = UNI ropa (vkey usa 990)
+    // sizePart 100 = UNI para todos los sistemas excepto brasier y bebe
     let tallaLabel: string | undefined;
     let sizeCodeForVkey = sizePart;
 
-    if (sizePart === '100' && sistema !== 'brasier' && sistema !== 'nina') {
+    if (sizePart === '100' && sistema !== 'brasier' && sistema !== 'bebe' && sistema !== 'jeans_dama') {
         tallaLabel = 'UNI';
         sizeCodeForVkey = '990';
     } else {
@@ -258,7 +286,7 @@ const decodeRopaBarcode = (barcode: string, colorMap: Record<string, string>) =>
     if (!tallaLabel) return null;
 
     const colorEntry = Object.entries(colorMap).find(([, code]) =>
-        String(code).padStart(3,'0') === colorPart.padStart(3,'0')
+        String(code).padStart(3, '0') === colorPart.padStart(3, '0')
     );
     const colorName = colorEntry ? colorEntry[0] : `COLOR-${colorPart}`;
     const vkey = `R|${modKey}|${colorName.toUpperCase()}|${sizeCodeForVkey}`;
@@ -1392,25 +1420,29 @@ const StockTab = ({ folioId, catalog, colors, onUpdate, addToast, sucursalId }: 
             const colorRaw = parts.slice(0, parts.length - 2).join(' ');
             if (isNaN(qty) || !modRaw || !colorRaw || !tallaRaw) continue;
             const uTalla = tallaRaw.toUpperCase().trim();
+            // UNI/UNITALLA → calzado unitalla
             const isUni = uTalla === 'UNI' || uTalla === 'UNITALLA';
 
-            // Detectar sistema de ropa por el patrón de la talla
+            // Detectar sistema de ropa por patron de la talla
             const nTalla = parseInt(uTalla.replace(/[^0-9]/g, ''));
-            const isMeses    = /^\d{1,2}M$/.test(uTalla);
-            const isBrasier  = /^\d{2}[ABCD]$/.test(uTalla);                          // 32B, 34C, 40D
-            const isAnos     = /^(0[2-9]|1[02])A$/i.test(uTalla);                     // 02A, 04A, 06A, 08A, 10A, 12A
-            const isLetrasDama = !isUni && !isBrasier && !isAnos &&
-                ['CH','M','G','XG','EXG','XCH','CHI','MED','GDE','XXG','CHM','GEX','MEX','CHEX','3EG'].some(x => uTalla === x || uTalla.startsWith(x));
-            const isNina     = !isUni && !isLetrasDama && !isBrasier && !isAnos && !isNaN(nTalla) && nTalla >= 3  && nTalla <= 16;
-            const isJeans    = !isUni && !isLetrasDama && !isBrasier && !isAnos && !isNaN(nTalla) && nTalla >= 28 && nTalla <= 50;
-            const isRopaTalla = isLetrasDama || isNina || isJeans || isMeses || isBrasier || isAnos;
+            const isMeses    = /^\d{1,2}M$/.test(uTalla);                          // 3M, 6M, 12M...
+            const isBrasier  = /^\d{2}[ABCD]$/.test(uTalla);                       // 32B, 38B, 40C...
+            const isAnos     = /^(0[2-9]|1[02])A$/i.test(uTalla);                  // 02A, 04A...
+            const nBase      = nTalla > 50 ? nTalla / 10 : nTalla;                 // normalizar 300→30, 050→5
+            const isJeansCab = !isUni && !isBrasier && !isAnos && !isMeses &&
+                               !isNaN(nBase) && nBase >= 28 && nBase <= 50 && nBase % 2 === 0;
+            const isJeansDama= !isUni && !isBrasier && !isAnos && !isMeses && !isJeansCab &&
+                               !isNaN(nBase) && nBase >= 3  && nBase <= 15 && nBase % 2 === 1;
+            const isLetrasDama = !isUni && !isBrasier && !isAnos && !isMeses && !isJeansCab && !isJeansDama &&
+                ['CH','M','G','XG','EXG','XCH','CHI','MED','GDE','XXG','CHM','GEX','3EG'].some(x => uTalla === x || uTalla.startsWith(x));
+            const isRopaTalla = isLetrasDama || isJeansDama || isJeansCab || isMeses || isBrasier || isAnos;
 
             let tallaNorm: string;
             let catFinal: 'calzado' | 'ropa';
             let ropaCode = '000';
 
             if (isUni) {
-                // UNI puede ser ropa o calzado según el modelo
+                // UNI puede ser ropa o calzado segun el modelo
                 const modKey = cleanModel(modRaw);
                 const sistemaExistente = sizeSystemByModel[modKey];
                 if (sistemaExistente) {

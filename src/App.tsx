@@ -584,31 +584,7 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
     const startNewSession = async () => {
         if (!newArea.trim()) { addToast('Escribe el area a escanear', 'warning'); return; }
         const operatorName = appSession?.nombre || newOperator.trim() || 'Scanner';
-
         try {
-            // Verificacion de conflictos con timeout — si Firebase tarda mas de 3s, continuar
-            if (appSession?.operadorId) {
-                try {
-                    const timeoutPromise = new Promise<never>((_, reject) =>
-                        setTimeout(() => reject(new Error('timeout')), 3000)
-                    );
-                    const allSessions = await Promise.race([
-                        fbGetAllSessions(sucursalId ?? undefined),
-                        timeoutPromise,
-                    ]).catch(() => []) as ScanSession[];
-                    const activeSession = allSessions.find(
-                        s => s.operadorId === appSession.operadorId && s.deviceId && s.deviceId !== deviceId
-                    );
-                    if (activeSession) {
-                        setConflictSession(activeSession);
-                        setShowConflict(true);
-                        return;
-                    }
-                } catch {
-                    // timeout o error — continuar sin verificar conflicto
-                }
-            }
-
             const newId = await doStartSession(newArea.trim(), operatorName, appSession?.operadorId);
             fbSubscribeToSession(newId, (s) => { if (s) setCurrentSession(s as ScanSession); }, sucursalId ?? undefined);
             fbSubscribeToSessionItems(newId, (items) => setSessionItems(items as SessionItem[]), sucursalId ?? undefined);

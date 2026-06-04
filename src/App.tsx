@@ -806,17 +806,13 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
                         ))}
                     </div>
                 </div>
-                <div>
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1 mb-1">
-                        <Users size={12} /> Operador *
-                    </label>
-                    <input
-                        className="w-full border-2 border-sky-200 rounded-xl p-3 text-base focus:outline-none focus:border-sky-400"
-                        placeholder="Tu nombre"
-                        value={newOperator}
-                        onChange={e => setNewOperator(e.target.value)}
-                    />
-                </div>
+                {/* Operador tomado del login — no se muestra campo */}
+                {appSession?.nombre && (
+                    <div className="flex items-center gap-2 bg-sky-50 border border-sky-200 rounded-xl px-4 py-3">
+                        <Users size={14} className="text-sky-500" />
+                        <span className="text-sm font-semibold text-sky-700">{appSession.nombre}</span>
+                    </div>
+                )}
                 <button
                     onClick={startNewSession}
                     disabled={loading}

@@ -4066,24 +4066,22 @@ const App: React.FC = () => {
             if (!spByModel[modKey]) spByModel[modKey] = [];
             spByModel[modKey].push(sp);
         }
-        // LOG TEMPORAL: mostrar sistemas de modelos problemáticos
-        console.log('[SYS] 82063:', sizeSystemByModel['82063'], 'sps:', spCheckMap['82063']);
-        console.log('[SYS] 82083:', sizeSystemByModel['82083'], 'sps:', spCheckMap['82083']);
-        console.log('[SYS] 82035:', sizeSystemByModel['82035'], 'sps:', spCheckMap['82035']);
         for (const [modKey, sps] of Object.entries(spByModel)) {
-            if (sizeSystemByModel[modKey]) continue; // ya tiene marcador
-            // Detectar sistema por los sizeparts del modelo
-            if (sps.some(sp => sp >= 101 && sp <= 105))        { sizeSystemByModel[modKey] = 'bebe';      continue; }
-            if (sps.some(sp => sp === 160))                     { sizeSystemByModel[modKey] = 'brasier';   continue; }
-            if (sps.some(sp => sp >= 280 && sp <= 500))         { sizeSystemByModel[modKey] = 'jeans_cab'; continue; }
-            if (sps.some(sp => sp >= 109 && sp <= 129))         { sizeSystemByModel[modKey] = 'anos';      continue; }
-            // jeans_dama: tiene sizeparts 30,50,70,90 (tallas 3,5,7,9)
-            // dama: sizeparts 100,110,120,128,130,140,150 (CHI,M,G,XCH,EXG,XXG,3EG)
-            // La distincion clave: jeans_dama siempre tiene al menos un sp <= 90
-            if (sps.some(sp => sp <= 90 && sp >= 30))                  { sizeSystemByModel[modKey] = 'jeans_dama'; continue; }
-            // Brasier sin sp=160: modelos con solo sizeparts 100,110,120,130 y NO tiene
-            // los codigos de anos/bebe/jeans — asumir brasier si tiene talla B en marcador
-            // Sin marcador y sin distincion clara → dama
+            if (sizeSystemByModel[modKey]) continue; // ya tiene marcador __SYS__
+            // Inferir sistema por mayoria de sps — ignorar sps corruptos de versiones anteriores
+            const damaCount   = sps.filter(sp => sp >= 100 && sp <= 160 && sp % 10 === 0).length;
+            const jeansDCount = sps.filter(sp => [30,50,70,90].includes(sp)).length;
+            const jeansCCount = sps.filter(sp => sp >= 280 && sp <= 500).length;
+            const bebeCount   = sps.filter(sp => sp >= 100 && sp <= 105).length;
+            const anosCount   = sps.filter(sp => sp >= 109 && sp <= 129).length;
+
+            if (sps.includes(160))                               { sizeSystemByModel[modKey] = 'brasier';   continue; }
+            if (jeansCCount > 0)                                 { sizeSystemByModel[modKey] = 'jeans_cab'; continue; }
+            if (bebeCount > 1)                                   { sizeSystemByModel[modKey] = 'bebe';      continue; }
+            // anos: mayoria de sps en 109-129 sin sps de dama (100,120,140)
+            if (anosCount > 0 && damaCount === 0)                { sizeSystemByModel[modKey] = 'anos';      continue; }
+            // jeans_dama: sps de tallas pequeñas SON mayoria
+            if (jeansDCount > 0 && jeansDCount >= damaCount)    { sizeSystemByModel[modKey] = 'jeans_dama'; continue; }
             sizeSystemByModel[modKey] = 'dama';
         }
 

@@ -310,7 +310,18 @@ const decodeRopaBarcode = (barcode: string, colorMap: Record<string, string>) =>
     } else {
         // Buscar en el mapa del sistema registrado
         tallaLabel = activeMap[sizePart];
-        // Si no encontró, buscar en todos los mapas
+        // Si sistema es jeans_dama pero el sp no es de talla impar pequeña,
+        // puede ser modelo dama con sps corruptos — buscar en DAMA_SIZE_MAP primero
+        if (tallaLabel && sistema === 'jeans_dama') {
+            const n = parseInt(tallaLabel);
+            const isJeansDamaTalla = !isNaN(n) && n >= 3 && n <= 17 && n % 2 === 1;
+            if (!isJeansDamaTalla) {
+                // La talla no parece ser de jeans dama — verificar en DAMA_SIZE_MAP
+                const damaLabel = DAMA_SIZE_MAP[sizePart];
+                if (damaLabel) tallaLabel = damaLabel;
+            }
+        }
+        // Si no encontró, buscar en todos los mapas (DAMA primero)
         if (!tallaLabel) {
             for (const map of ALL_ROPA_MAPS) {
                 if (map[sizePart]) { tallaLabel = map[sizePart]; break; }
@@ -526,7 +537,7 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
     const [newOperator, setNewOperator] = useState(() => appSession?.nombre || localStorage.getItem('conteo:user') || '');
     const [conflictSession, setConflictSession] = useState<ScanSession | null>(null);
     const [showConflict, setShowConflict] = useState(false);
-    const [modoRopa, setModoRopa] = useState(() => localStorage.getItem('conteo:modoRopa') === 'true');
+    const [modoRopa, setModoRopa] = useState(false);
     const deviceId = React.useMemo(() => {
         let id = localStorage.getItem('conteo:deviceId');
         if (!id) { id = crypto.randomUUID(); localStorage.setItem('conteo:deviceId', id); }
@@ -906,7 +917,7 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
                 </div>
                 <div className="flex gap-2">
                     <button
-                        onClick={() => setModoRopa(m => { localStorage.setItem('conteo:modoRopa', String(!m)); return !m; })}
+                        onClick={() => setModoRopa(m => !m)}
                         className={`flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg font-bold transition-all ${modoRopa ? 'bg-purple-500 text-white shadow' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 border'}`}
                         title={modoRopa ? 'Modo Ropa ACTIVO — toca para desactivar' : 'Activar Modo Ropa'}
                     >
@@ -1444,11 +1455,18 @@ const StockTab = ({ folioId, catalog, colors, onUpdate, addToast, sucursalId }: 
             const isMeses    = /^\d{1,2}M$/.test(uTalla);                          // 3M, 6M, 12M...
             const isBrasier  = /^\d{2}[ABCD]$/.test(uTalla) && parseInt(uTalla) >= 28;                       // 32B, 38B, 40C...
             const isAnos     = /^(0[2-9]|1[02])A$/i.test(uTalla);                  // 02A, 04A...
-            const nBase      = nTalla > 50 ? nTalla / 10 : nTalla;                 // normalizar 300→30, 050→5
+            // Normalizar talla: 030→3, 050→5, 300→30, 320→32
+            // jeans_dama: 030-170 múltiplos de 10 impares (030=3, 050=5, 070=7...)
+            // jeans_cab:  300-500 múltiplos de 20 (300=30, 320=32, 340=34...)
+            const nBase = (nTalla >= 30 && nTalla <= 170 && nTalla % 10 === 0)
+                ? nTalla / 10   // 030→3, 050→5, 070→7, 090→9, 110→11, 130→13, 150→15
+                : nTalla > 50 ? nTalla / 10 : nTalla;
             const isJeansCab = !isUni && !isBrasier && !isAnos && !isMeses &&
-                               !isNaN(nBase) && nBase >= 28 && nBase <= 50 && nBase % 2 === 0;
+                               !isNaN(nTalla) && nTalla >= 300 && nTalla <= 500 &&
+                               nTalla % 20 === 0; // 300,320,340,360,380,400...
             const isJeansDama= !isUni && !isBrasier && !isAnos && !isMeses && !isJeansCab &&
-                               !isNaN(nBase) && nBase >= 3  && nBase <= 15 && nBase % 2 === 1;
+                               !isNaN(nBase) && nBase >= 3 && nBase <= 17 && nBase % 2 === 1 &&
+                               /^\d+$/.test(uTalla); // solo numérico puro, no letras como 3EG
             const isLetrasDama = !isUni && !isBrasier && !isAnos && !isMeses && !isJeansCab && !isJeansDama &&
                 ['CH','M','G','XG','EXG','XCH','CHI','MED','GDE','XXG','CHM','GEX','3EG'].some(x => uTalla === x || uTalla.startsWith(x));
             const isRopaTalla = isLetrasDama || isJeansDama || isJeansCab || isMeses || isBrasier || isAnos;
@@ -1493,7 +1511,21 @@ const StockTab = ({ folioId, catalog, colors, onUpdate, addToast, sucursalId }: 
                 : keyOf(modRaw, colorRaw, tallaNorm, catFinal);
             parsed.push({ mod: cleanModel(modRaw), color: canonical(colorRaw), talla: tallaNorm, qty, vkey, cat: catFinal });
         }
-        setPreview(parsed); setStep(1);
+        // Segunda pasada: reasignar UNI a ropa si corresponde
+        const ropaModelKeys = new Set(parsed.filter(p => p.cat === 'ropa').map(p => p.mod));
+        const finalParsed = parsed.map(p => {
+            if (p.cat === 'calzado' && p.talla === '100') {
+                // Es UNI calzado — convertir a ropa si:
+                // a) el modelo tiene otras tallas de ropa, O
+                // b) el checkbox "UNI es ropa" está activado
+                if (ropaModelKeys.has(p.mod)) {
+                    const ropaVkey = 'R|' + p.mod + '|' + p.color + '|990';
+                    return { ...p, cat: 'ropa' as const, talla: 'UNI', vkey: ropaVkey };
+                }
+            }
+            return p;
+        });
+        setPreview(finalParsed); setStep(1);
     };
 
     const handleConfirm = async () => {
@@ -3735,7 +3767,7 @@ const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => void }) =>
                     <div className="space-y-3">
                         <button onClick={async () => { await loadOperadoresSucursal(sucursal.id); setOpSeleccionado(null); setMode('operador'); setError(''); }}
                             className="w-full bg-sky-500 hover:bg-sky-400 text-white py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 active:scale-95 shadow-lg">
-                            📷 Soy Escaner
+                            📷 Escaner
                         </button>
                         <div className="pt-2 border-t border-white/10 space-y-2">
                             <button onClick={() => { setMode('admin'); setError(''); setUsuario(''); setPassword(''); }}
@@ -3811,7 +3843,7 @@ const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => void }) =>
                     <div className="space-y-3">
                         <button onClick={async () => { await loadSucursales(); setMode('elegir'); setError(''); }}
                             className="w-full bg-sky-500 hover:bg-sky-400 text-white py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 active:scale-95">
-                            📷 Soy Escaner
+                            📷 Escaner
                         </button>
                         <button onClick={() => { setMode('admin'); setError(''); }}
                             className="w-full bg-white/15 hover:bg-white/25 text-white py-3 rounded-2xl font-semibold flex items-center justify-center gap-2 active:scale-95">

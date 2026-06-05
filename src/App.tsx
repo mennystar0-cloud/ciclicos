@@ -3994,10 +3994,12 @@ const App: React.FC = () => {
             const modKey = p[1] || '';
             if (!modKey || sizeSystemByModel[modKey]) continue;
             const sp = parseInt(p[3] || '0');
-            if (sp >= 101 && sp <= 105)  { sizeSystemByModel[modKey] = 'bebe'; continue; }
-            if (sp === 160)               { sizeSystemByModel[modKey] = 'brasier'; continue; }
-            if (sp >= 280 && sp <= 500)   { sizeSystemByModel[modKey] = 'jeans_cab'; continue; }
+            if (sp >= 101 && sp <= 105)              { sizeSystemByModel[modKey] = 'bebe';      continue; }
+            if (sp === 160)                           { sizeSystemByModel[modKey] = 'brasier';   continue; }
+            if (sp >= 280 && sp <= 500)               { sizeSystemByModel[modKey] = 'jeans_cab'; continue; }
             if ([30,50,70,90,110,130,150].includes(sp)) { sizeSystemByModel[modKey] = 'jeans_dama'; continue; }
+            // anos: 109,113,117,121,122,125,129 — rango 109-129 no cubierto por otros sistemas
+            if (sp >= 109 && sp <= 129)              { sizeSystemByModel[modKey] = 'anos';      continue; }
             sizeSystemByModel[modKey] = 'dama';
         }
 

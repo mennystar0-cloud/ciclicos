@@ -4001,6 +4001,8 @@ const App: React.FC = () => {
             if (!spByModel[modKey]) spByModel[modKey] = [];
             spByModel[modKey].push(sp);
         }
+        console.log('[DEBUG 32300]', spByModel['32300'], 'sys:', sizeSystemByModel['32300']);
+        (window as any).__spByModel = spByModel;
         for (const [modKey, sps] of Object.entries(spByModel)) {
             if (sizeSystemByModel[modKey]) continue; // ya tiene marcador
             // Detectar sistema por los sizeparts del modelo

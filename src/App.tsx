@@ -29,14 +29,16 @@ const formatTalla = (t: string | number): string => {
 
 // Detecta si una talla humana "10" es en realidad Unitalla basado en el vkey
 const isTallaUni = (talla: string, vkey?: string): boolean => {
-    if (talla === '100' || talla.toUpperCase() === 'UNI') return true;
-    // Si el vkey contiene |100 al final, es unitalla
-    if (vkey && vkey.endsWith('|100')) return true;
+    if (talla.toUpperCase() === 'UNI') return true;
+    // |100 al final solo es UNI para calzado (no ropa — ropa usa |990 para UNI)
+    if (vkey && vkey.endsWith('|100') && !vkey.startsWith('R|')) return true;
     return false;
 };
 
 const formatTallaFromVkey = (talla: string, vkey?: string): string => {
     if (isTallaUni(talla, vkey)) return 'UNI';
+    // Para ropa: la talla ya viene correcta desde decodeRopaBarcode (ej: '32B')
+    // Solo devolver talla directamente — tallaFromRopaVkey se usa en otros contextos
     return talla;
 };
 
@@ -119,7 +121,6 @@ const ALL_ROPA_MAPS = [
 // Sistema de tallas por modelo — se construye al parsear el teorico
 type SizeSystem = 'dama' | 'jeans_dama' | 'jeans_cab' | 'bebe' | 'brasier' | 'anos';
 const sizeSystemByModel: Record<string, SizeSystem> = {};
-(window as any).__sysMap = sizeSystemByModel; // DEBUG: accesible desde consola
 
 const getSizeMapForSystem = (sys: SizeSystem): Record<string, string> => {
     if (sys === 'jeans_dama') return JEANS_DAMA_SIZE_MAP;
@@ -268,7 +269,6 @@ const decodeRopaBarcode = (barcode: string, colorMap: Record<string, string>) =>
     const modKey = modelPart.replace(/[^A-Z0-9]/gi, '').toUpperCase();
     const sistema: SizeSystem = sizeSystemByModel[modKey] || 'dama';
     const activeMap = getSizeMapForSystem(sistema);
-    console.log(`[DECODE] mod=${modKey} sizePart=${sizePart} sistema=${sistema} activeMap[sp]=${activeMap[sizePart]}`);
 
     let tallaLabel: string | undefined;
     let sizeCodeForVkey = sizePart;
@@ -3978,20 +3978,14 @@ const App: React.FC = () => {
 
         // Reconstruir sizeSystemByModel desde marcadores guardados en Firebase
         // Formato marcador: R|MODEL|__SYS__|sistema  (qty=0, no es inventario real)
-        let marcadoresLeidos = 0;
         for (const vkey of vkeys) {
             if (!vkey.startsWith('R|')) continue;
             const p = vkey.split('|');
             // Marcador: p[2] === '__SYS__', p[3] = sistema
             if (p[2] === '__SYS__' && p[3]) {
                 sizeSystemByModel[p[1]] = p[3] as SizeSystem;
-                marcadoresLeidos++;
-            }
+                    }
         }
-        console.log('[SYS] Marcadores leidos:', marcadoresLeidos);
-        console.log('[SYS] 82083:', sizeSystemByModel['82083']);
-        console.log('[SYS] 82035:', sizeSystemByModel['82035']);
-        console.log('[SYS] Todos los sistemas:', Object.entries(sizeSystemByModel).filter(([,v]) => v === 'brasier'));
         // Fallback para modelos sin marcador: inferir por sizePart
         for (const vkey of vkeys) {
             if (!vkey.startsWith('R|')) continue;

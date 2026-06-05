@@ -4001,8 +4001,10 @@ const App: React.FC = () => {
             if (!spByModel[modKey]) spByModel[modKey] = [];
             spByModel[modKey].push(sp);
         }
-        console.log('[DEBUG 32300]', spByModel['32300'], 'sys:', sizeSystemByModel['32300']);
+        console.log('[DEBUG 32300 raw vkeys]', Object.keys(tMap).filter(k=>k.includes('32300')).slice(0,5));
+        console.log('[DEBUG 32300 sp]', spByModel['32300'], 'sys:', sizeSystemByModel['32300']);
         (window as any).__spByModel = spByModel;
+        (window as any).__tMap = tMap;
         for (const [modKey, sps] of Object.entries(spByModel)) {
             if (sizeSystemByModel[modKey]) continue; // ya tiene marcador
             // Detectar sistema por los sizeparts del modelo

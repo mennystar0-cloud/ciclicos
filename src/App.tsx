@@ -123,6 +123,9 @@ type SizeSystem = 'dama' | 'jeans_dama' | 'jeans_cab' | 'bebe' | 'brasier' | 'an
 const sizeSystemByModel: Record<string, SizeSystem> = {};
 // Modelos que tienen talla UNI de ropa — se llena al reconstruir el catalogo
 const uniRopaModels: Set<string> = new Set();
+// Variante de talla CH por modelo: 'CHM'|'GEX' si el modelo usa esa variante
+const tallaVariantByModel: Record<string, Record<string, string>> = {};
+// tallaVariantByModel[modKey]['CH'] = 'CHM' significa que CH se muestra como CHM
 
 const getSizeMapForSystem = (sys: SizeSystem): Record<string, string> => {
     if (sys === 'jeans_dama') return JEANS_DAMA_SIZE_MAP;
@@ -249,7 +252,12 @@ const tallaFromRopaVkey = (vkey: string): string => {
         if (label) return label;
     }
     for (const map of ALL_ROPA_MAPS) {
-        if (map[sizePart]) return map[sizePart];
+        if (map[sizePart]) {
+            const baseLabel = map[sizePart];
+            // Aplicar variante si existe (CHM en lugar de CH, GEX en lugar de G)
+            const variant = tallaVariantByModel[modKey]?.[baseLabel];
+            return variant || baseLabel;
+        }
     }
     return sizePart;
 };
@@ -298,7 +306,9 @@ const decodeRopaBarcode = (barcode: string, colorMap: Record<string, string>) =>
     );
     const colorName = colorEntry ? colorEntry[0] : `COLOR-${colorPart}`;
     const vkey = `R|${modKey}|${colorName.toUpperCase()}|${sizeCodeForVkey}`;
-    return { mod: modelPart, color: colorName, talla: tallaLabel, vkey, category: 'ropa' as const, isSuspicious: false, isIncomplete: false };
+    // Aplicar variante de talla si existe (CHM, GEX, MED, etc.)
+    const variantLabel = tallaVariantByModel[modKey]?.[tallaLabel] || tallaLabel;
+    return { mod: modelPart, color: colorName, talla: variantLabel, vkey, category: 'ropa' as const, isSuspicious: false, isIncomplete: false };
 };
 
 
@@ -497,7 +507,7 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
     const [newOperator, setNewOperator] = useState(() => appSession?.nombre || localStorage.getItem('conteo:user') || '');
     const [conflictSession, setConflictSession] = useState<ScanSession | null>(null);
     const [showConflict, setShowConflict] = useState(false);
-    const [modoRopa, setModoRopa] = useState(false);
+    const [modoRopa, setModoRopa] = useState(() => localStorage.getItem('conteo:modoRopa') === 'true');
     const deviceId = React.useMemo(() => {
         let id = localStorage.getItem('conteo:deviceId');
         if (!id) { id = crypto.randomUUID(); localStorage.setItem('conteo:deviceId', id); }
@@ -877,7 +887,7 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
                 </div>
                 <div className="flex gap-2">
                     <button
-                        onClick={() => setModoRopa(m => !m)}
+                        onClick={() => setModoRopa(m => { localStorage.setItem('conteo:modoRopa', String(!m)); return !m; })}
                         className={`flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg font-bold transition-all ${modoRopa ? 'bg-purple-500 text-white shadow' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 border'}`}
                         title={modoRopa ? 'Modo Ropa ACTIVO — toca para desactivar' : 'Activar Modo Ropa'}
                     >
@@ -1443,6 +1453,14 @@ const StockTab = ({ folioId, catalog, colors, onUpdate, addToast, sucursalId }: 
                 const sistema = detectSistemaByTalla(tallaRaw, modKey);
                 tallaNorm = normalizeTallaRopa(tallaRaw, sistema);
                 ropaCode  = ropaTallaToCode(tallaNorm, sistema);
+                // Guardar variante exacta para CH→CHM, G→GEX etc.
+                const uTallaVar = tallaRaw.toUpperCase().trim();
+                if (sistema === 'dama') {
+                    if (!tallaVariantByModel[modKey]) tallaVariantByModel[modKey] = {};
+                    if (uTallaVar === 'CHM' || uTallaVar === 'CHI')  tallaVariantByModel[modKey]['CH']  = uTallaVar;
+                    if (uTallaVar === 'GEX' || uTallaVar === 'GDE')  tallaVariantByModel[modKey]['G']   = uTallaVar;
+                    if (uTallaVar === 'MED')                          tallaVariantByModel[modKey]['M']   = 'MED';
+                }
             } else {
                 tallaNorm = tallaRaw;
                 catFinal  = detectCategoryBySize(tallaRaw);
@@ -1487,6 +1505,14 @@ const StockTab = ({ folioId, catalog, colors, onUpdate, addToast, sucursalId }: 
                 mergedMap = { ...(folio.theoreticalMap || {}) };
                 for (const [vkey, qty] of Object.entries(theoretical)) {
                     mergedMap[vkey] = (mergedMap[vkey] || 0) + qty;
+                }
+            }
+
+            // 4a. Guardar marcadores de variante de talla (__VAR__)
+            // Permite distinguir CHM de CHI y GEX de GDE al reconstruir
+            for (const [mod, variants] of Object.entries(tallaVariantByModel)) {
+                for (const [base, variant] of Object.entries(variants)) {
+                    if (base !== variant) mergedMap[`R|${mod}|__VAR__|${base}:${variant}`] = 0;
                 }
             }
 
@@ -3987,12 +4013,43 @@ const App: React.FC = () => {
             if (p[3] === '990' && p[2] !== '__SYS__') uniRopaModels.add(p[1]);
         }
 
+        // Paso 0: leer marcadores __VAR__ para variantes de talla (CHM, GEX, etc.)
+        for (const k of Object.keys(tallaVariantByModel)) delete tallaVariantByModel[k];
+        for (const vkey of vkeys) {
+            if (!vkey.startsWith('R|')) continue;
+            const p = vkey.split('|');
+            if (p[2] === '__VAR__' && p[3]) {
+                const [base, variant] = p[3].split(':');
+                if (base && variant) {
+                    if (!tallaVariantByModel[p[1]]) tallaVariantByModel[p[1]] = {};
+                    tallaVariantByModel[p[1]][base] = variant;
+                }
+            }
+        }
+
         // Paso 1: leer marcadores __SYS__ guardados en Firebase (fuente mas confiable)
+        // Recolectar sizeparts reales primero para validar marcadores
+        const spCheckMap: Record<string, number[]> = {};
+        for (const vkey of vkeys) {
+            if (!vkey.startsWith('R|')) continue;
+            const p = vkey.split('|');
+            if (p[2] === '__SYS__' || p[2] === '__VAR__') continue;
+            const sp = parseInt(p[3] || '0');
+            if (!isNaN(sp) && p[1]) {
+                if (!spCheckMap[p[1]]) spCheckMap[p[1]] = [];
+                spCheckMap[p[1]].push(sp);
+            }
+        }
         for (const vkey of vkeys) {
             if (!vkey.startsWith('R|')) continue;
             const p = vkey.split('|');
             if (p[2] === '__SYS__' && p[3]) {
-                sizeSystemByModel[p[1]] = p[3] as SizeSystem;
+                const sys = p[3] as SizeSystem;
+                const sps = spCheckMap[p[1]] || [];
+                // Validar marcador brasier: brasier real tiene sp=160
+                // Si marcador dice brasier pero no hay sp=160 → ignorar (marcador corrupto)
+                if (sys === 'brasier' && !sps.includes(160)) continue;
+                sizeSystemByModel[p[1]] = sys;
             }
         }
 

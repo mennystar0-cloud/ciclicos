@@ -273,21 +273,20 @@ const decodeRopaBarcode = (barcode: string, colorMap: Record<string, string>) =>
     let tallaLabel: string | undefined;
     let sizeCodeForVkey = sizePart;
 
-    // Buscar primero en el mapa del sistema registrado
-    tallaLabel = activeMap[sizePart];
-
-    // Si no encontró, buscar en todos los mapas
-    if (!tallaLabel) {
-        for (const map of ALL_ROPA_MAPS) {
-            if (map[sizePart]) { tallaLabel = map[sizePart]; break; }
-        }
-    }
-
-    // sizePart 100 = UNI solo si el sistema es dama Y no hay otro candidato
-    // (brasier y bebe tambien usan 100 pero tienen sistema registrado)
-    if (!tallaLabel && sizePart === '100') {
+    // UNI de ropa: sizePart=100 con sistema dama = UNI (CH es el fallback del mapa, no lo que queremos)
+    // brasier y bebe tambien usan sizePart=100 pero tienen sistema propio registrado
+    if (sizePart === '100' && (sistema === 'dama' || !sizeSystemByModel[modKey])) {
         tallaLabel = 'UNI';
         sizeCodeForVkey = '990';
+    } else {
+        // Buscar en el mapa del sistema registrado
+        tallaLabel = activeMap[sizePart];
+        // Si no encontró, buscar en todos los mapas
+        if (!tallaLabel) {
+            for (const map of ALL_ROPA_MAPS) {
+                if (map[sizePart]) { tallaLabel = map[sizePart]; break; }
+            }
+        }
     }
 
     if (!tallaLabel) return null;
@@ -4008,7 +4007,11 @@ const App: React.FC = () => {
             if (sps.some(sp => sp === 160))                     { sizeSystemByModel[modKey] = 'brasier';   continue; }
             if (sps.some(sp => sp >= 280 && sp <= 500))         { sizeSystemByModel[modKey] = 'jeans_cab'; continue; }
             if (sps.some(sp => sp >= 109 && sp <= 129))         { sizeSystemByModel[modKey] = 'anos';      continue; }
-            if (sps.some(sp => [30,50,70,90,110,130,150].includes(sp))) { sizeSystemByModel[modKey] = 'jeans_dama'; continue; }
+            // jeans_dama: tiene sizeparts pequeños (30,50,70...) — si tiene sp<=90 es seguro
+            // dama: sizeparts 100-150 sin sp<=90
+            if (sps.some(sp => [30,50,70,90].includes(sp)))            { sizeSystemByModel[modKey] = 'jeans_dama'; continue; }
+            // Si solo tiene 110,130,150 sin sp<=90 podria ser jeans_dama con tallas grandes
+            if (sps.every(sp => [110,130,150].includes(sp)) && !sps.some(sp => [100,120,128,140].includes(sp))) { sizeSystemByModel[modKey] = 'jeans_dama'; continue; }
             // Brasier sin sp=160: modelos con solo sizeparts 100,110,120,130 y NO tiene
             // los codigos de anos/bebe/jeans — asumir brasier si tiene talla B en marcador
             // Sin marcador y sin distincion clara → dama

@@ -94,14 +94,25 @@ const BEBE_SIZE_MAP: Record<string, string> = {
 };
 
 // ── 5. BRASIER (talla + copa) ─────────────────────────────────────────────────
-// Verificado: 32B→100, 34B→110, 36B→120, 38B→130, 40C→160
-// Copa B: sizePart = (talla-30)*10 + 100  → 32→100, 34→110, 36→120, 38→130
-// Copa C en 40: sizePart = 160
+// Barcode real: 32B→sizePart=100, 34B→110, 36B→120, 38B→130, 40C→160
+// VKEY interno: usa rango 200-299 para no colisionar con dama (100-150) ni otros sistemas
+// 32B→232, 34B→234, 36B→236, 38B→238, 40B→240
+// 32C→242, 34C→244, 36C→246, 38C→248, 40C→250, 40D→260
+// La conversion barcode→vkey ocurre en decodeRopaBarcode
 const BRASIER_SIZE_MAP: Record<string, string> = {
-    '100': '32B', '110': '34B',
-    '120': '36B', '130': '38B',
-    '160': '40C',
+    '232': '32B', '234': '34B', '236': '36B', '238': '38B', '240': '40B',
+    '242': '32C', '244': '34C', '246': '36C', '248': '38C', '250': '40C',
+    '252': '32D', '254': '34D', '256': '36D', '258': '38D', '260': '40D',
     '990': 'UNI',
+};
+
+// Mapa de sizePart del BARCODE a sizePart del VKEY para brasier
+// (el barcode usa 100-160, el vkey usa 200-299 para evitar colisiones)
+const BRASIER_BARCODE_TO_VKEY: Record<string, string> = {
+    '100': '232', '110': '234', '120': '236', '130': '238', '140': '240',
+    '101': '242', '111': '244', '121': '246', '131': '248', '141': '250',
+    '102': '252', '112': '254', '122': '256', '132': '258', '142': '260',
+    '160': '250', // 40C barcode real
 };
 
 // ── 6. INFANTIL EN ANOS (02A-12A) ─────────────────────────────────────────────
@@ -223,10 +234,14 @@ const ropaTallaToCode = (tallaLabel: string, sistema: SizeSystem = 'dama'): stri
     }
     // Fallback brasier
     if (sistema === 'brasier') {
+        // Generar sizePart del VKEY (rango 200-299, no el del barcode)
         const m = tallaLabel.match(/^(\d{2})([ABCD])$/);
         if (m) {
-            if (m[1] === '40' && m[2] === 'C') return '160';
-            const base = (parseInt(m[1]) - 30) * 10 + 100;
+            const tNum = parseInt(m[1]);
+            const copaOffset: Record<string,number> = { B: 0, C: 10, D: 20 };
+            const base = 230 + (tNum - 32) + (copaOffset[m[2]] ?? 0);
+            // 32B→232, 34B→234, 36B→236, 38B→238, 40B→240
+            // 32C→242, 34C→244... 40C→250
             return String(base).padStart(3, '0');
         }
     }
@@ -284,10 +299,14 @@ const decodeRopaBarcode = (barcode: string, colorMap: Record<string, string>) =>
     let sizeCodeForVkey = sizePart;
 
     // UNI de ropa: sizePart=100 con sistema dama = UNI solo si el modelo esta en uniRopaModels
-    // CHI tambien tiene sizePart=100 pero NO esta en uniRopaModels
     if (sizePart === '100' && uniRopaModels.has(modKey)) {
         tallaLabel = 'UNI';
         sizeCodeForVkey = '990';
+    } else if (sistema === 'brasier') {
+        // Brasier: convertir sizePart del barcode (100-160) al sizePart del vkey (200-299)
+        sizeCodeForVkey = BRASIER_BARCODE_TO_VKEY[sizePart] || sizePart;
+        tallaLabel = BRASIER_SIZE_MAP[sizeCodeForVkey];
+        if (!tallaLabel) tallaLabel = activeMap[sizePart]; // fallback
     } else {
         // Buscar en el mapa del sistema registrado
         tallaLabel = activeMap[sizePart];
@@ -4075,7 +4094,7 @@ const App: React.FC = () => {
             const bebeCount   = sps.filter(sp => sp >= 100 && sp <= 105).length;
             const anosCount   = sps.filter(sp => sp >= 109 && sp <= 129).length;
 
-            if (sps.includes(160))                               { sizeSystemByModel[modKey] = 'brasier';   continue; }
+            if (sps.includes(160) || sps.some(sp => sp >= 232 && sp <= 260)) { sizeSystemByModel[modKey] = 'brasier'; continue; }
             if (jeansCCount > 0)                                 { sizeSystemByModel[modKey] = 'jeans_cab'; continue; }
             if (bebeCount > 1)                                   { sizeSystemByModel[modKey] = 'bebe';      continue; }
             // anos: mayoria de sps en 109-129 sin sps de dama (100,120,140)

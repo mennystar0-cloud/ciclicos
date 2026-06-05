@@ -4066,6 +4066,10 @@ const App: React.FC = () => {
             if (!spByModel[modKey]) spByModel[modKey] = [];
             spByModel[modKey].push(sp);
         }
+        // LOG TEMPORAL: mostrar sistemas de modelos problemáticos
+        console.log('[SYS] 82063:', sizeSystemByModel['82063'], 'sps:', spCheckMap['82063']);
+        console.log('[SYS] 82083:', sizeSystemByModel['82083'], 'sps:', spCheckMap['82083']);
+        console.log('[SYS] 82035:', sizeSystemByModel['82035'], 'sps:', spCheckMap['82035']);
         for (const [modKey, sps] of Object.entries(spByModel)) {
             if (sizeSystemByModel[modKey]) continue; // ya tiene marcador
             // Detectar sistema por los sizeparts del modelo

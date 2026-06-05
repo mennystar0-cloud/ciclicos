@@ -140,7 +140,7 @@ const detectSistemaByTalla = (tallaRaw: string, modKey: string): SizeSystem => {
     // Bebe meses: 3M, 6M, 9M, 12M, 18M, 24M
     if (/^\d{1,2}M$/.test(u)) { sizeSystemByModel[modKey] = 'bebe'; return 'bebe'; }
     // Brasier: 32B, 34B, 36B, 38B, 40C, 40D
-    if (/^\d{2}[ABCD]$/.test(u)) { sizeSystemByModel[modKey] = 'brasier'; return 'brasier'; }
+    if (/^\d{2}[ABCD]$/.test(u) && parseInt(u) >= 28) { sizeSystemByModel[modKey] = 'brasier'; return 'brasier'; }
     // Infantil anos: 02A, 04A, 06A, 08A, 10A, 12A
     if (/^(0[2-9]|1[02])A$/i.test(u)) { sizeSystemByModel[modKey] = 'anos'; return 'anos'; }
     // Numerico puro
@@ -1412,7 +1412,7 @@ const StockTab = ({ folioId, catalog, colors, onUpdate, addToast, sucursalId }: 
             // Detectar sistema de ropa por patron de la talla
             const nTalla = parseInt(uTalla.replace(/[^0-9]/g, ''));
             const isMeses    = /^\d{1,2}M$/.test(uTalla);                          // 3M, 6M, 12M...
-            const isBrasier  = /^\d{2}[ABCD]$/.test(uTalla);                       // 32B, 38B, 40C...
+            const isBrasier  = /^\d{2}[ABCD]$/.test(uTalla) && parseInt(uTalla) >= 28;                       // 32B, 38B, 40C...
             const isAnos     = /^(0[2-9]|1[02])A$/i.test(uTalla);                  // 02A, 04A...
             const nBase      = nTalla > 50 ? nTalla / 10 : nTalla;                 // normalizar 300→30, 050→5
             const isJeansCab = !isUni && !isBrasier && !isAnos && !isMeses &&
@@ -4001,10 +4001,6 @@ const App: React.FC = () => {
             if (!spByModel[modKey]) spByModel[modKey] = [];
             spByModel[modKey].push(sp);
         }
-        console.log('[DEBUG 32300 raw vkeys]', Object.keys(tMap).filter(k=>k.includes('32300')).slice(0,5));
-        console.log('[DEBUG 32300 sp]', spByModel['32300'], 'sys:', sizeSystemByModel['32300']);
-        (window as any).__spByModel = spByModel;
-        (window as any).__tMap = tMap;
         for (const [modKey, sps] of Object.entries(spByModel)) {
             if (sizeSystemByModel[modKey]) continue; // ya tiene marcador
             // Detectar sistema por los sizeparts del modelo

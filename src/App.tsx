@@ -3976,30 +3976,42 @@ const App: React.FC = () => {
             if (parts.barcode) byBarcode[parts.barcode] = item;
         }
 
-        // Reconstruir sizeSystemByModel desde marcadores guardados en Firebase
-        // Formato marcador: R|MODEL|__SYS__|sistema  (qty=0, no es inventario real)
+        // Limpiar y reconstruir sizeSystemByModel desde cero en cada folio
+        for (const k of Object.keys(sizeSystemByModel)) delete sizeSystemByModel[k];
+
+        // Paso 1: leer marcadores __SYS__ guardados en Firebase (fuente mas confiable)
         for (const vkey of vkeys) {
             if (!vkey.startsWith('R|')) continue;
             const p = vkey.split('|');
-            // Marcador: p[2] === '__SYS__', p[3] = sistema
             if (p[2] === '__SYS__' && p[3]) {
                 sizeSystemByModel[p[1]] = p[3] as SizeSystem;
-                    }
+            }
         }
-        // Fallback para modelos sin marcador: inferir por sizePart
+
+        // Paso 2: inferir por sizePart para modelos sin marcador (folios viejos)
+        // Primero recolectar todos los sizeparts por modelo
+        const spByModel: Record<string, number[]> = {};
         for (const vkey of vkeys) {
             if (!vkey.startsWith('R|')) continue;
             const p = vkey.split('|');
-            if (p[2] === '__SYS__') continue; // ya procesado
+            if (p[2] === '__SYS__') continue;
             const modKey = p[1] || '';
-            if (!modKey || sizeSystemByModel[modKey]) continue;
             const sp = parseInt(p[3] || '0');
-            if (sp >= 101 && sp <= 105)              { sizeSystemByModel[modKey] = 'bebe';      continue; }
-            if (sp === 160)                           { sizeSystemByModel[modKey] = 'brasier';   continue; }
-            if (sp >= 280 && sp <= 500)               { sizeSystemByModel[modKey] = 'jeans_cab'; continue; }
-            if ([30,50,70,90,110,130,150].includes(sp)) { sizeSystemByModel[modKey] = 'jeans_dama'; continue; }
-            // anos: 109,113,117,121,122,125,129 — rango 109-129 no cubierto por otros sistemas
-            if (sp >= 109 && sp <= 129)              { sizeSystemByModel[modKey] = 'anos';      continue; }
+            if (!modKey || isNaN(sp)) continue;
+            if (!spByModel[modKey]) spByModel[modKey] = [];
+            spByModel[modKey].push(sp);
+        }
+        for (const [modKey, sps] of Object.entries(spByModel)) {
+            if (sizeSystemByModel[modKey]) continue; // ya tiene marcador
+            // Detectar sistema por los sizeparts del modelo
+            if (sps.some(sp => sp >= 101 && sp <= 105))        { sizeSystemByModel[modKey] = 'bebe';      continue; }
+            if (sps.some(sp => sp === 160))                     { sizeSystemByModel[modKey] = 'brasier';   continue; }
+            if (sps.some(sp => sp >= 280 && sp <= 500))         { sizeSystemByModel[modKey] = 'jeans_cab'; continue; }
+            if (sps.some(sp => sp >= 109 && sp <= 129))         { sizeSystemByModel[modKey] = 'anos';      continue; }
+            if (sps.some(sp => [30,50,70,90,110,130,150].includes(sp))) { sizeSystemByModel[modKey] = 'jeans_dama'; continue; }
+            // Brasier sin sp=160: modelos con solo sizeparts 100,110,120,130 y NO tiene
+            // los codigos de anos/bebe/jeans — asumir brasier si tiene talla B en marcador
+            // Sin marcador y sin distincion clara → dama
             sizeSystemByModel[modKey] = 'dama';
         }
 

@@ -268,6 +268,7 @@ const decodeRopaBarcode = (barcode: string, colorMap: Record<string, string>) =>
     const modKey = modelPart.replace(/[^A-Z0-9]/gi, '').toUpperCase();
     const sistema: SizeSystem = sizeSystemByModel[modKey] || 'dama';
     const activeMap = getSizeMapForSystem(sistema);
+    console.log(`[DECODE] mod=${modKey} sizePart=${sizePart} sistema=${sistema} activeMap[sp]=${activeMap[sizePart]}`);
 
     let tallaLabel: string | undefined;
     let sizeCodeForVkey = sizePart;

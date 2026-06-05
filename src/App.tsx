@@ -121,6 +121,8 @@ const ALL_ROPA_MAPS = [
 // Sistema de tallas por modelo — se construye al parsear el teorico
 type SizeSystem = 'dama' | 'jeans_dama' | 'jeans_cab' | 'bebe' | 'brasier' | 'anos';
 const sizeSystemByModel: Record<string, SizeSystem> = {};
+// Modelos que tienen talla UNI de ropa — se llena al reconstruir el catalogo
+const uniRopaModels: Set<string> = new Set();
 
 const getSizeMapForSystem = (sys: SizeSystem): Record<string, string> => {
     if (sys === 'jeans_dama') return JEANS_DAMA_SIZE_MAP;
@@ -273,9 +275,9 @@ const decodeRopaBarcode = (barcode: string, colorMap: Record<string, string>) =>
     let tallaLabel: string | undefined;
     let sizeCodeForVkey = sizePart;
 
-    // UNI de ropa: sizePart=100 con sistema dama = UNI (CH es el fallback del mapa, no lo que queremos)
-    // brasier y bebe tambien usan sizePart=100 pero tienen sistema propio registrado
-    if (sizePart === '100' && (sistema === 'dama' || !sizeSystemByModel[modKey])) {
+    // UNI de ropa: sizePart=100 con sistema dama = UNI solo si el modelo esta en uniRopaModels
+    // CHI tambien tiene sizePart=100 pero NO esta en uniRopaModels
+    if (sizePart === '100' && uniRopaModels.has(modKey)) {
         tallaLabel = 'UNI';
         sizeCodeForVkey = '990';
     } else {
@@ -3975,8 +3977,15 @@ const App: React.FC = () => {
             if (parts.barcode) byBarcode[parts.barcode] = item;
         }
 
-        // Limpiar y reconstruir sizeSystemByModel desde cero en cada folio
+        // Limpiar y reconstruir sizeSystemByModel y uniRopaModels desde cero
         for (const k of Object.keys(sizeSystemByModel)) delete sizeSystemByModel[k];
+        uniRopaModels.clear();
+        // Detectar modelos UNI de ropa (tienen sizePart=990 en el vkey)
+        for (const vkey of vkeys) {
+            if (!vkey.startsWith('R|')) continue;
+            const p = vkey.split('|');
+            if (p[3] === '990' && p[2] !== '__SYS__') uniRopaModels.add(p[1]);
+        }
 
         // Paso 1: leer marcadores __SYS__ guardados en Firebase (fuente mas confiable)
         for (const vkey of vkeys) {
@@ -4007,11 +4016,10 @@ const App: React.FC = () => {
             if (sps.some(sp => sp === 160))                     { sizeSystemByModel[modKey] = 'brasier';   continue; }
             if (sps.some(sp => sp >= 280 && sp <= 500))         { sizeSystemByModel[modKey] = 'jeans_cab'; continue; }
             if (sps.some(sp => sp >= 109 && sp <= 129))         { sizeSystemByModel[modKey] = 'anos';      continue; }
-            // jeans_dama: tiene sizeparts pequeños (30,50,70...) — si tiene sp<=90 es seguro
-            // dama: sizeparts 100-150 sin sp<=90
-            if (sps.some(sp => [30,50,70,90].includes(sp)))            { sizeSystemByModel[modKey] = 'jeans_dama'; continue; }
-            // Si solo tiene 110,130,150 sin sp<=90 podria ser jeans_dama con tallas grandes
-            if (sps.every(sp => [110,130,150].includes(sp)) && !sps.some(sp => [100,120,128,140].includes(sp))) { sizeSystemByModel[modKey] = 'jeans_dama'; continue; }
+            // jeans_dama: tiene sizeparts 30,50,70,90 (tallas 3,5,7,9)
+            // dama: sizeparts 100,110,120,128,130,140,150 (CHI,M,G,XCH,EXG,XXG,3EG)
+            // La distincion clave: jeans_dama siempre tiene al menos un sp <= 90
+            if (sps.some(sp => sp <= 90 && sp >= 30))                  { sizeSystemByModel[modKey] = 'jeans_dama'; continue; }
             // Brasier sin sp=160: modelos con solo sizeparts 100,110,120,130 y NO tiene
             // los codigos de anos/bebe/jeans — asumir brasier si tiene talla B en marcador
             // Sin marcador y sin distincion clara → dama

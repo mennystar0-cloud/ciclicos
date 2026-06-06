@@ -1421,6 +1421,43 @@ const StockTab = ({ folioId, catalog, colors, onUpdate, addToast, sucursalId }: 
     const parseRaw = () => {
         const lines = rawText.trim().split('\n').filter(l => l.trim());
         const parsed: any[] = [];
+
+        // PRE-PASADA: recolectar todas las tallas numéricas por modelo
+        // para distinguir calzado vs jeans_dama vs jeans_cab
+        const tallasNumPorModelo: Record<string, number[]> = {};
+        for (const line of lines) {
+            const trimmed = line.trim();
+            const commaIdx = trimmed.indexOf(',');
+            if (commaIdx === -1) continue;
+            const mod = trimmed.substring(0, commaIdx).trim();
+            const rest = trimmed.substring(commaIdx + 1).trim().split(/\s+/);
+            if (rest.length < 3) continue;
+            const talla = rest[rest.length - 2];
+            const n = parseInt(talla.replace(/[^0-9]/g, ''));
+            if (!isNaN(n) && /^\d+$/.test(talla)) {
+                const mk = mod.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+                if (!tallasNumPorModelo[mk]) tallasNumPorModelo[mk] = [];
+                tallasNumPorModelo[mk].push(n);
+            }
+        }
+
+        // Reglas definitivas (un cíclico es de un solo almacén):
+        // Jeans dama: >=3 tallas, TODAS en set {30,50,70,90,110,130,150,170}
+        // Jeans cab:  >=2 tallas, TODAS múltiplos de 20 >= 300
+        // Calzado: todo lo demás
+        const JDAMA = new Set([30,50,70,90,110,130,150,170]);
+        const calzadoModelos = new Set<string>();
+        for (const [mk, tallasArr] of Object.entries(tallasNumPorModelo)) {
+            const unicas = [...new Set(tallasArr)];
+            const n = unicas.length;
+            const todasJeansDama = unicas.every(t => JDAMA.has(t));
+            const todasJeansCab  = unicas.every(t => t >= 300 && t % 20 === 0);
+            if (n >= 3 && todasJeansDama) continue; // jeans_dama
+            if (n >= 2 && todasJeansCab)  continue; // jeans_cab
+            calzadoModelos.add(mk);
+        }
+        const calzadoInfantilModelos = calzadoModelos;
+
         for (const line of lines) {
             const trimmed = line.trim();
             let modRaw = '';
@@ -1464,12 +1501,16 @@ const StockTab = ({ folioId, catalog, colors, onUpdate, addToast, sucursalId }: 
             const isJeansCab = !isUni && !isBrasier && !isAnos && !isMeses &&
                                !isNaN(nTalla) && nTalla >= 300 && nTalla <= 500 &&
                                nTalla % 20 === 0; // 300,320,340,360,380,400...
-            const isJeansDama= !isUni && !isBrasier && !isAnos && !isMeses && !isJeansCab &&
+            const modKey0 = cleanModel(modRaw);
+            const isCalzadoModelo = calzadoModelos.has(modKey0);
+            const isJeansCabFinal = isJeansCab && !isCalzadoModelo; // no si el modelo es calzado
+            const isJeansDama= !isUni && !isBrasier && !isAnos && !isMeses && !isJeansCabFinal &&
                                !isNaN(nBase) && nBase >= 3 && nBase <= 17 && nBase % 2 === 1 &&
-                               /^\d+$/.test(uTalla); // solo numérico puro, no letras como 3EG
+                               /^\d+$/.test(uTalla) && // solo numérico puro
+                               !isCalzadoModelo; // no es calzado
             const isLetrasDama = !isUni && !isBrasier && !isAnos && !isMeses && !isJeansCab && !isJeansDama &&
                 ['CH','M','G','XG','EXG','XCH','CHI','MED','GDE','XXG','CHM','GEX','3EG'].some(x => uTalla === x || uTalla.startsWith(x));
-            const isRopaTalla = isLetrasDama || isJeansDama || isJeansCab || isMeses || isBrasier || isAnos;
+            const isRopaTalla = isLetrasDama || isJeansDama || isJeansCabFinal || isMeses || isBrasier || isAnos;
 
             let tallaNorm: string;
             let catFinal: 'calzado' | 'ropa';
@@ -1486,7 +1527,7 @@ const StockTab = ({ folioId, catalog, colors, onUpdate, addToast, sucursalId }: 
                 }
             } else if (isRopaTalla) {
                 catFinal = 'ropa';
-                const modKey = cleanModel(modRaw);
+                const modKey = modKey0;
                 const sistema = detectSistemaByTalla(tallaRaw, modKey);
                 tallaNorm = normalizeTallaRopa(tallaRaw, sistema);
                 ropaCode  = ropaTallaToCode(tallaNorm, sistema);
@@ -3375,6 +3416,7 @@ const SuperAdminPanel = ({ onLogout }: { onLogout: () => void }) => {
     const [password, setPassword]     = React.useState('');
     const [showSettings, setShowSettings] = React.useState(false);
     const [vista, setVista]           = React.useState<'sucursales'|'reporte'>('sucursales');
+    const [viewMode, setViewMode]       = React.useState<'cards'|'list'>('cards');
     const [foliosAll, setFoliosAll]   = React.useState<any[]>([]);
     const [loadingRep, setLoadingRep] = React.useState(false);
     const [filtroSuc, setFiltroSuc]   = React.useState('todas');
@@ -3617,15 +3659,32 @@ const SuperAdminPanel = ({ onLogout }: { onLogout: () => void }) => {
                     </div>
                 )}
 
+                {/* Toggle vista */}
+                {!loading && sucursales.length > 0 && (
+                    <div className="flex justify-end mb-3">
+                        <div className="flex bg-slate-800 rounded-xl p-1 border border-slate-700">
+                            <button onClick={() => setViewMode('cards')} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'cards' ? 'bg-sky-500 text-white' : 'text-slate-400 hover:text-white'}`}>⊞ Tarjetas</button>
+                            <button onClick={() => setViewMode('list')} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'list' ? 'bg-sky-500 text-white' : 'text-slate-400 hover:text-white'}`}>☰ Lista</button>
+                        </div>
+                    </div>
+                )}
                 {loading ? <p className="text-center text-slate-400 py-10">Cargando sucursales...</p> : (
-                    <div className="space-y-3">
+                    <div className={viewMode === 'list' ? 'rounded-2xl border border-slate-700 overflow-hidden' : 'space-y-3'}>
                         {sucursales.length === 0 && (
                             <div className="text-center py-10 text-slate-500">
                                 <p className="text-4xl mb-2">🏢</p>
                                 <p>Sin sucursales. Crea la primera.</p>
                             </div>
                         )}
-                        {sucursales.map(s => (
+                        {viewMode === 'list' && (
+                            <div className="grid grid-cols-5 bg-slate-700/50 px-4 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wide border-b border-slate-700">
+                                <span className="col-span-2">Sucursal</span>
+                                <span className="text-center">Folios</span>
+                                <span className="text-center">Abiertos</span>
+                                <span className="text-right">Acciones</span>
+                            </div>
+                        )}
+                        {sucursales.map((s, idx) => viewMode === 'cards' ? (
                             <div key={s.id} className={`bg-slate-800 rounded-2xl p-4 border border-slate-700${!s.activa ? ' opacity-50' : ''}`}>
                                 <div className="flex items-start justify-between gap-3">
                                     <div className="flex items-center gap-3">
@@ -3657,6 +3716,28 @@ const SuperAdminPanel = ({ onLogout }: { onLogout: () => void }) => {
                                         <p className="text-sm font-bold text-sky-400">{s.totalOperadores ?? 0}</p>
                                         <p className="text-[10px] text-slate-400">Operadores</p>
                                     </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div key={s.id} className={`grid grid-cols-5 items-center px-4 py-3 border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors${!s.activa ? ' opacity-50' : ''}${idx === sucursales.length-1 ? ' border-b-0' : ''}`}>
+                                <div className="col-span-2 flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-xl bg-sky-500/20 border border-sky-500/30 flex items-center justify-center flex-shrink-0">
+                                        <span className="text-sky-400 font-black text-sm">{s.nombre.slice(0,1).toUpperCase()}</span>
+                                    </div>
+                                    <div>
+                                        <p className="font-semibold text-white text-sm">{s.nombre}</p>
+                                        <div className="flex items-center gap-2">
+                                            <p className="text-[10px] text-slate-400">@{s.usuario}</p>
+                                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${s.activa ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>{s.activa ? 'Activa' : 'Inactiva'}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <p className="text-center font-bold text-white text-sm">{s.totalFolios ?? 0}</p>
+                                <p className="text-center font-bold text-emerald-400 text-sm">{s.openFolios ?? 0}</p>
+                                <div className="flex gap-1 justify-end">
+                                    <button onClick={() => openEdit(s)} className="p-1.5 text-slate-400 hover:text-sky-400 rounded-lg">✏️</button>
+                                    <button onClick={() => handleToggle(s)} className="p-1.5 text-slate-400 hover:text-amber-400 rounded-lg">{s.activa ? '🚫' : '✅'}</button>
+                                    <button onClick={() => handleDelete(s)} className="p-1.5 text-slate-400 hover:text-red-400 rounded-lg">🗑️</button>
                                 </div>
                             </div>
                         ))}

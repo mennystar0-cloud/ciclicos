@@ -316,9 +316,20 @@ const decodeRopaBarcode = (barcode: string, colorMap: Record<string, string>) =>
             const n = parseInt(tallaLabel);
             const isJeansDamaTalla = !isNaN(n) && n >= 3 && n <= 17 && n % 2 === 1;
             if (!isJeansDamaTalla) {
-                // La talla no parece ser de jeans dama — verificar en DAMA_SIZE_MAP
                 const damaLabel = DAMA_SIZE_MAP[sizePart];
                 if (damaLabel) tallaLabel = damaLabel;
+            } else {
+                // tallaLabel es impar 3-17 — pero puede ser dama con sp=150 (3EG)
+                // Verificar: si DAMA_SIZE_MAP tiene una talla diferente para este sp,
+                // y el sp es >= 130 (CHI=100,M=110,G=120,EXG=130,XXG=140,3EG=150)
+                // y el modelo tiene otros sps de dama, usar dama
+                // Heurística: si sp=150 y modelo tiene sizeSystem corrupto,
+                // preferir DAMA_SIZE_MAP si su resultado NO es número impar pequeño
+                const damaLabel = DAMA_SIZE_MAP[sizePart];
+                if (damaLabel && parseInt(damaLabel) !== n && isNaN(parseInt(damaLabel))) {
+                    // DAMA_SIZE_MAP da una letra (3EG, EXG...) → preferir sobre el número
+                    tallaLabel = damaLabel;
+                }
             }
         }
         // Si no encontró, buscar en todos los mapas (DAMA primero)
@@ -538,6 +549,7 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
     const [conflictSession, setConflictSession] = useState<ScanSession | null>(null);
     const [showConflict, setShowConflict] = useState(false);
     const [modoRopa, setModoRopa] = useState(false);
+    const modoRopaRef = useRef(false); // ref para acceso síncrono en handleScan
     const deviceId = React.useMemo(() => {
         let id = localStorage.getItem('conteo:deviceId');
         if (!id) { id = crypto.randomUUID(); localStorage.setItem('conteo:deviceId', id); }
@@ -656,7 +668,7 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
         // Try catalog
         let item = catalog.byBarcode[clean];
         if (!item) {
-            const decoded = modoRopa
+            const decoded = modoRopaRef.current
                 ? decodeRopaBarcode(clean, colors)
                 : tryDecodeStructuredBarcode(clean, colors);
             if (decoded) item = { mod: decoded.mod, color: decoded.color, talla: decoded.talla, vkey: decoded.vkey, category: decoded.category };
@@ -917,7 +929,7 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
                 </div>
                 <div className="flex gap-2">
                     <button
-                        onClick={() => setModoRopa(m => !m)}
+                        onClick={() => setModoRopa(m => { modoRopaRef.current = !m; return !m; })}
                         className={`flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg font-bold transition-all ${modoRopa ? 'bg-purple-500 text-white shadow' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 border'}`}
                         title={modoRopa ? 'Modo Ropa ACTIVO — toca para desactivar' : 'Activar Modo Ropa'}
                     >

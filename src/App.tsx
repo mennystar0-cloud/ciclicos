@@ -960,49 +960,56 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
     );
 
     return (
-        <div className={`space-y-4 ${flash === 'ok' ? 'bg-emerald-50' : flash === 'err' ? 'bg-red-50' : ''} rounded-xl transition-colors duration-300`}>
-            {/* Session header */}
-            <div className="bg-white rounded-xl border p-4 shadow-sm flex justify-between items-center">
-                <div>
-                    <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
-                        <span className="font-bold text-slate-800 dark:text-white">{currentSession?.area}</span>
+        <div className={`space-y-4 ${flash === 'ok' ? 'bg-emerald-50 dark:bg-emerald-950/20' : flash === 'err' ? 'bg-red-50 dark:bg-red-950/20' : ''} rounded-xl transition-colors duration-300`}>
+            {/* Session header — contador grande */}
+            <div className="bg-white dark:bg-slate-800 rounded-2xl border dark:border-slate-700 shadow-sm overflow-hidden">
+                {/* Fila superior: área + botones */}
+                <div className="px-4 pt-3 pb-2 flex items-center justify-between">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse flex-shrink-0" />
+                        <span className="font-bold text-slate-800 dark:text-white truncate">{currentSession?.area}</span>
+                        {modoRopa && <span className="text-[10px] bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 px-2 py-0.5 rounded-full font-bold flex-shrink-0">👕 ROPA</span>}
                     </div>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                        {currentSession?.operator} · <span className="font-bold text-sky-600">{sessionItems.length}</span> escaneos
-                        {modoRopa && <span className="ml-2 text-purple-600 font-bold">· 👕 Modo Ropa</span>}
-                    </p>
+                    <div className="flex gap-1.5 flex-shrink-0">
+                        <button
+                            onClick={() => setModoRopa(m => { modoRopaRef.current = !m; return !m; })}
+                            className={`text-xs px-2.5 py-1.5 rounded-lg font-bold transition-all ${modoRopa ? 'bg-purple-500 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 border dark:border-slate-600'}`}
+                            title={modoRopa ? 'Modo Ropa ACTIVO' : 'Activar Modo Ropa'}
+                        >👕</button>
+                        <button onClick={exportCSV} className="text-xs bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 px-2.5 py-1.5 rounded-lg font-semibold">
+                            <Download size={13} />
+                        </button>
+                        <button onClick={confirmNewSession} className="text-xs bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 px-2.5 py-1.5 rounded-lg font-semibold">
+                            <RefreshCw size={13} />
+                        </button>
+                    </div>
                 </div>
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => setModoRopa(m => { modoRopaRef.current = !m; return !m; })}
-                        className={`flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg font-bold transition-all ${modoRopa ? 'bg-purple-500 text-white shadow' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 border'}`}
-                        title={modoRopa ? 'Modo Ropa ACTIVO — toca para desactivar' : 'Activar Modo Ropa'}
-                    >
-                        👕 {modoRopa ? 'ROPA' : 'Ropa'}
-                    </button>
-                    <button onClick={exportCSV} className="flex items-center gap-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-lg font-semibold">
-                        <Download size={14} /> CSV
-                    </button>
-                    <button onClick={confirmNewSession} className="flex items-center gap-1 text-xs bg-amber-50 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-lg font-semibold">
-                        <RefreshCw size={14} /> Nuevo
-                    </button>
-                </div>
-            </div>
 
-            {/* Stats */}
-            <div className="grid grid-cols-3 gap-2">
-                <div className="bg-white rounded-xl p-3 text-center shadow-sm border">
-                    <p className="text-2xl font-bold text-slate-800">{sessionItems.length}</p>
-                    <p className="text-[10px] text-slate-400">Total</p>
-                </div>
-                <div className="bg-white rounded-xl p-3 text-center shadow-sm border">
-                    <p className="text-2xl font-bold text-emerald-600">{sessionItems.filter(s => s.recognized).length}</p>
-                    <p className="text-[10px] text-slate-400">Reconocidos</p>
-                </div>
-                <div className="bg-white rounded-xl p-3 text-center shadow-sm border">
-                    <p className="text-2xl font-bold text-amber-500">{streak}</p>
-                    <p className="text-[10px] text-slate-400 flex items-center justify-center gap-0.5"><Zap size={10} />Racha</p>
+                {/* Contador principal */}
+                <div className="px-4 pb-4 flex items-end justify-between">
+                    <div>
+                        <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">{currentSession?.operator}</p>
+                        <div className="flex items-baseline gap-3">
+                            <span key={sessionItems.length} className="text-6xl font-black text-slate-800 dark:text-white tabular-nums" style={{ animation: 'countPop 0.2s ease-out' }}>
+                                {sessionItems.length}
+                            </span>
+                            <div className="space-y-0.5 pb-1">
+                                <p className="text-xs text-slate-400">escaneos</p>
+                                <p className="text-xs text-emerald-600 font-semibold">{sessionItems.filter(s => s.recognized).length} reconocidos</p>
+                                {sessionItems.filter(s => !s.recognized).length > 0 && (
+                                    <p className="text-xs text-red-500 font-semibold">{sessionItems.filter(s => !s.recognized).length} no reconocidos</p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                    {/* Racha */}
+                    {streak > 0 && (
+                        <div className="flex flex-col items-center bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl px-3 py-2">
+                            <Zap size={16} className="text-amber-500" />
+                            <span className="text-xl font-black text-amber-600">{streak}</span>
+                            <span className="text-[9px] text-amber-500 font-bold uppercase">racha</span>
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -4959,6 +4966,7 @@ const App: React.FC = () => {
             <style>{`
                 @keyframes confetti { from { transform: translateY(-20px) rotate(0deg); opacity:1; } to { transform: translateY(100vh) rotate(720deg); opacity:0; } }
                 @keyframes slideDown { from { transform: translateY(-100%); opacity:0; } to { transform: translateY(0); opacity:1; } }
+                @keyframes countPop { 0% { transform: scale(1.25); opacity:0.7; } 100% { transform: scale(1); opacity:1; } }
             `}</style>
             {showSettings  && <SettingsPanel  onClose={() => setShowSettings(false)} />}
             {showOperators && sucursalId && <OperatorsPanel sucursalId={sucursalId} onClose={() => setShowOperators(false)} addToast={addToast} />}

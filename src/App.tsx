@@ -4674,6 +4674,7 @@ const App: React.FC = () => {
     const [showSettings,  setShowSettings]  = useState(false);
     const [showOperators, setShowOperators] = useState(false);
     const [showSearch,    setShowSearch]    = useState(false);
+    const [activeScannerCount, setActiveScannerCount] = useState(0);
 
     const sucursalId = session?.sucursalId;
     const role: Role | null = !session ? null : session.tipo === 'admin' ? 'admin' : 'scanner';
@@ -4720,6 +4721,17 @@ const App: React.FC = () => {
         const unsubScans = fbSubscribeToScans(folioId, data => { setScans(data as Scan[]); }, sucursalId ?? undefined);
         return () => { unsubFolio(); unsubScans(); };
     }, [folioId, sucursalId]);
+
+    // Contador de escáneres activos para badge en nav
+    useEffect(() => {
+        if (!sucursalId) return;
+        const ACTIVE_THRESHOLD = 90_000;
+        const unsub = fbSubscribeToAllSessions((sessions: any[]) => {
+            const count = sessions.filter(s => s.active && (Date.now() - (s.lastSeen ?? 0)) < ACTIVE_THRESHOLD).length;
+            setActiveScannerCount(count);
+        }, sucursalId);
+        return () => unsub();
+    }, [sucursalId]);
 
     useEffect(() => {
         if (!folio?.theoreticalMap) { setCatalog({ byBarcode: {}, byVariant: {} }); return; }
@@ -4846,7 +4858,7 @@ const App: React.FC = () => {
         { id: 'folio',       label: 'Inventarios', icon: <FileText />,  roles: ['admin'] },
         { id: 'existencias', label: 'Cargar',       icon: <Boxes />,     roles: ['admin'] },
         { id: 'escanear',    label: 'Escanear',     icon: <QrCode />,    roles: ['scanner'] },
-        { id: 'sesiones',    label: 'Sesiones',     icon: <Users />,     roles: ['admin'], badge: 0 },
+        { id: 'sesiones',    label: 'Sesiones',     icon: <Users />,     roles: ['admin'], badge: activeScannerCount },
         { id: 'reporte',     label: 'Reporte',      icon: <BarChart3 />, roles: ['admin'] },
         { id: 'consulta',    label: 'Consulta',     icon: <Search />,    roles: ['admin'] },
         { id: 'historial',   label: 'Ubicaciones',  icon: <MapPin />,    roles: ['admin'] },
@@ -4920,7 +4932,14 @@ const App: React.FC = () => {
                     {visibleTabs.map(t => (
                         <button key={t.id} onClick={() => handleTabChange(t.id as Tab)}
                             className={`flex flex-col items-center px-2 py-2 min-w-[48px] rounded-xl transition-all relative ${activeTab === t.id ? 'text-sky-600 bg-sky-50 dark:bg-sky-900/30' : 'text-slate-400 dark:text-slate-500'}`}>
-                            <div className="w-5 h-5">{t.icon}</div>
+                            <div className="w-5 h-5 relative">
+                                {t.icon}
+                                {(t.badge ?? 0) > 0 && (
+                                    <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-3.5 bg-emerald-500 text-white text-[9px] font-black rounded-full flex items-center justify-center px-0.5 leading-none">
+                                        {t.badge}
+                                    </span>
+                                )}
+                            </div>
                             <span className="text-[9px] font-medium mt-0.5 whitespace-nowrap">{t.label}</span>
                         </button>
                     ))}

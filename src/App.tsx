@@ -860,26 +860,41 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
         <div className="space-y-6">
             {/* Sin inventario abierto */}
             {!folio || folio.state !== 'open' ? (
-                <div className="flex flex-col items-center justify-center py-16 space-y-4 text-center">
-                    <div className="w-20 h-20 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
-                        <span className="text-4xl">📋</span>
+                <div className="flex flex-col items-center justify-center min-h-[70vh] text-center px-4 space-y-6">
+                    {/* Ícono animado */}
+                    <div className="relative">
+                        <div className="w-28 h-28 rounded-full bg-gradient-to-br from-sky-400 to-sky-600 flex items-center justify-center shadow-lg shadow-sky-200 dark:shadow-sky-900">
+                            <QrCode size={52} className="text-white opacity-90" />
+                        </div>
+                        <div className="absolute -bottom-1 -right-1 w-9 h-9 rounded-full bg-amber-400 flex items-center justify-center shadow">
+                            <span className="text-lg">⏳</span>
+                        </div>
                     </div>
-                    <div>
-                        <h3 className="font-black text-slate-800 dark:text-white text-lg">Sin inventario activo</h3>
-                        <p className="text-slate-500 dark:text-slate-400 text-sm mt-1 max-w-xs">
-                            No hay ningun inventario abierto en esta sucursal. Pide al administrador que cree uno.
+
+                    {/* Saludo personalizado */}
+                    <div className="space-y-1">
+                        <p className="text-slate-400 dark:text-slate-500 text-sm font-medium uppercase tracking-wider">Bienvenido</p>
+                        <h2 className="text-3xl font-black text-slate-800 dark:text-white">
+                            {appSession?.nombre ? `¡Hola, ${appSession.nombre.split(' ')[0]}!` : '¡Hola!'}
+                        </h2>
+                        {appSession?.sucursalNombre && (
+                            <p className="text-slate-500 dark:text-slate-400 text-sm">{appSession.sucursalNombre}</p>
+                        )}
+                    </div>
+
+                    {/* Estado */}
+                    <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-2xl p-5 max-w-xs w-full space-y-2">
+                        <p className="font-bold text-amber-800 dark:text-amber-300 text-base">Esperando inventario</p>
+                        <p className="text-amber-700 dark:text-amber-400 text-sm leading-relaxed">
+                            El administrador aún no ha abierto un inventario. En cuanto lo haga, esta pantalla se actualizará automáticamente.
                         </p>
                     </div>
-                    <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-2xl p-4 text-sm text-amber-700 dark:text-amber-300 max-w-xs">
-                        <p className="font-bold mb-1">¿Que hacer?</p>
-                        <p>El administrador debe ir a <strong>Inventarios → Nuevo</strong> y crear un folio para poder escanear.</p>
+
+                    {/* Indicador de auto-verificación */}
+                    <div className="flex items-center gap-2 text-slate-400 dark:text-slate-500 text-xs">
+                        <div className="w-1.5 h-1.5 bg-sky-400 rounded-full animate-pulse" />
+                        Verificando cada 30 segundos...
                     </div>
-                    <button
-                        onClick={() => window.location.reload()}
-                        className="flex items-center gap-2 bg-sky-500 hover:bg-sky-400 text-white px-6 py-3 rounded-xl font-bold active:scale-95"
-                    >
-                        <RefreshCw size={16} /> Verificar de nuevo
-                    </button>
                 </div>
             ) : (
             <>

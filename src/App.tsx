@@ -404,6 +404,8 @@ const PlayCircle = (p: any) => <Icon {...p} d={['M12 22a10 10 0 1 0 0-20 10 10 0
 const RefreshCw = (p: any) => <Icon {...p} d={['M23 4v6h-6','M1 20v-6h6','M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15']} />;
 const Wifi = (p: any) => <Icon {...p} d={['M5 12.55a11 11 0 0 1 14.08 0','M1.42 9a16 16 0 0 1 21.16 0','M8.53 16.11a6 6 0 0 1 6.95 0','M12 20h.01']} />;
 const ArrowRight = (p: any) => <Icon {...p} d={['M5 12h14','M12 5l7 7-7 7']} />;
+const Moon = (p: any) => <Icon {...p} d={['M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z']} />;
+const Sun = (p: any) => <Icon {...p} d={['M12 1v2','M12 21v2','M4.22 4.22l1.42 1.42','M18.36 18.36l1.42 1.42','M1 12h2','M21 12h2','M4.22 19.78l1.42-1.42','M18.36 5.64l1.42-1.42','M12 5a7 7 0 1 0 0 14A7 7 0 0 0 12 5z']} />;
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 type ToastType = 'success' | 'error' | 'info' | 'warning';
@@ -4675,6 +4677,7 @@ const App: React.FC = () => {
     const [showOperators, setShowOperators] = useState(false);
     const [showSearch,    setShowSearch]    = useState(false);
     const [activeScannerCount, setActiveScannerCount] = useState(0);
+    const [isDark, setIsDark] = useState(() => loadUIPrefs().dark);
 
     const sucursalId = session?.sucursalId;
     const role: Role | null = !session ? null : session.tipo === 'admin' ? 'admin' : 'scanner';
@@ -4907,6 +4910,13 @@ const App: React.FC = () => {
                     {role === 'admin' && (
                         <button onClick={() => setShowOperators(true)} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800" title="Operadores">👥</button>
                     )}
+                    <button
+                        onClick={() => { const p = loadUIPrefs(); const next = !p.dark; saveUIPrefs(next, p.font); setIsDark(next); }}
+                        className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+                        title={isDark ? 'Modo claro' : 'Modo oscuro'}
+                    >
+                        {isDark ? <Sun size={17} /> : <Moon size={17} />}
+                    </button>
                     <button onClick={() => setShowSettings(true)} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">⚙️</button>
                     <button onClick={handleLogout} className="p-1.5 text-red-400 hover:text-red-600 rounded-lg hover:bg-red-50"><LogOut size={18}/></button>
                 </div>

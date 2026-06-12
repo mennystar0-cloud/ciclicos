@@ -6,12 +6,12 @@ import {
 } from 'firebase/firestore';
 
 const firebaseConfig = {
-    apiKey: "AIzaSyDWo7-4YPq1pDl4cWsxqht9HeTarp6RkIM",
-    authDomain: "ciclicos-bc996.firebaseapp.com",
-    projectId: "ciclicos-bc996",
-    storageBucket: "ciclicos-bc996.firebasestorage.app",
-    messagingSenderId: "253371789405",
-    appId: "1:253371789405:web:0c70e98fa9cfd6e7c49db4"
+    apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
+    authDomain:        import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId:         import.meta.env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket:     import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId:             import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
 const app = initializeApp(firebaseConfig);

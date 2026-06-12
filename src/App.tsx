@@ -1038,17 +1038,29 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
 };
 
 // ─── SESSIONS ADMIN TAB ───────────────────────────────────────────────────────
-const SessionsAdminTab = ({ addToast, sucursalId }: { addToast: (m: string, t?: ToastType) => void; sucursalId?: string }) => {
+const SessionsAdminTab = ({ addToast, sucursalId, folio, scans }: {
+    addToast: (m: string, t?: ToastType) => void;
+    sucursalId?: string;
+    folio: Folio | null;
+    scans: Scan[];
+}) => {
     const [sessions, setSessions] = useState<ScanSession[]>([]);
     const [expanded, setExpanded] = useState<string | null>(null);
     const [items, setItems] = useState<{ [id: string]: SessionItem[] }>({});
     const [loadingItems, setLoadingItems] = useState<string | null>(null);
     const [syncing, setSyncing] = useState<string | null>(null);
+    const [now, setNow] = useState(Date.now());
 
     useEffect(() => {
         const unsub = fbSubscribeToAllSessions((s) => setSessions(s as ScanSession[]), sucursalId);
         return () => unsub();
     }, [sucursalId]);
+
+    // Actualizar "now" cada 30s para que los indicadores activo/inactivo se refresquen
+    useEffect(() => {
+        const iv = setInterval(() => setNow(Date.now()), 30000);
+        return () => clearInterval(iv);
+    }, []);
 
     // Nota: Las sesiones se muestran desde la colección scanSessions (flujo ScannerSessionTab)
     // El ScanTab principal registra scans directo en el folio — ver pestaña Reporte para cruce completo
@@ -1133,7 +1145,6 @@ const SessionsAdminTab = ({ addToast, sucursalId }: { addToast: (m: string, t?: 
     };
 
     const INACTIVE_THRESHOLD = 2 * 60 * 1000; // 2 minutos
-    const now = Date.now();
     const activeSessions = sessions.filter(s =>
         !s.lastSeen || (now - s.lastSeen) < INACTIVE_THRESHOLD
     );
@@ -1141,8 +1152,116 @@ const SessionsAdminTab = ({ addToast, sucursalId }: { addToast: (m: string, t?: 
         s.lastSeen && (now - s.lastSeen) >= INACTIVE_THRESHOLD
     );
 
+    // ── Métricas de progreso ──────────────────────────────────────────────────
+    const totalTeorico   = folio ? Object.values(folio.theoreticalMap).reduce((a, b) => a + b, 0) : 0;
+    const totalEscaneado = folio ? Object.values(folio.existenciasMap).reduce((a, b) => a + b, 0)  : 0;
+    const coveragePct    = totalTeorico > 0 ? (totalEscaneado / totalTeorico) * 100 : 0;
+
+    // Áreas del folio (acumulado histórico desde areaCounters)
+    const areaEntries = folio
+        ? Object.entries(folio.areaCounters).sort((a, b) => b[1] - a[1])
+        : [];
+    const maxAreaCount = areaEntries.length > 0 ? areaEntries[0][1] : 1;
+
+    // Sesiones activas agrupadas por área para mostrar quién está escaneando dónde
+    const sessionsByArea: Record<string, ScanSession[]> = {};
+    activeSessions.forEach(s => {
+        if (!sessionsByArea[s.area]) sessionsByArea[s.area] = [];
+        sessionsByArea[s.area].push(s);
+    });
+
+    // Áreas con sesión activa que aún no tienen registro en areaCounters
+    const extraAreas = activeSessions
+        .map(s => s.area)
+        .filter(a => !folio?.areaCounters[a]);
+    const uniqueExtraAreas = [...new Set(extraAreas)];
+
     return (
         <div className="space-y-4">
+
+            {/* ── DASHBOARD DE PROGRESO ─────────────────────────────────────── */}
+            {folio && (
+                <div className="bg-white dark:bg-slate-800 rounded-2xl border dark:border-slate-700 shadow-sm overflow-hidden">
+                    <div className="px-4 pt-4 pb-2 flex items-center justify-between">
+                        <h3 className="font-bold text-slate-700 dark:text-white text-sm flex items-center gap-2">
+                            <BarChart3 size={15} className="text-sky-500" /> Progreso del Inventario
+                        </h3>
+                        {folio.state === 'open'
+                            ? <span className="text-[10px] bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 px-2 py-0.5 rounded-full font-bold uppercase">Abierto</span>
+                            : <span className="text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-500 px-2 py-0.5 rounded-full font-bold uppercase">Cerrado</span>
+                        }
+                    </div>
+
+                    {/* Cobertura general */}
+                    <div className="px-4 pb-4 flex items-center gap-5">
+                        <CoverageRing pct={coveragePct} size={88} />
+                        <div className="flex-1 space-y-1">
+                            <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400">
+                                <span>Teórico</span>
+                                <span className="font-bold text-slate-700 dark:text-white">{totalTeorico.toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400">
+                                <span>Escaneado</span>
+                                <span className="font-bold text-sky-600">{totalEscaneado.toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400">
+                                <span>Diferencia</span>
+                                <span className={`font-bold ${totalEscaneado - totalTeorico >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                                    {totalEscaneado - totalTeorico >= 0 ? '+' : ''}{(totalEscaneado - totalTeorico).toLocaleString()}
+                                </span>
+                            </div>
+                            {activeSessions.length > 0 && (
+                                <div className="flex items-center gap-1 pt-1">
+                                    <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+                                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                                        {activeSessions.length} escáner{activeSessions.length > 1 ? 'es' : ''} activo{activeSessions.length > 1 ? 's' : ''}
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Progreso por área */}
+                    {(areaEntries.length > 0 || uniqueExtraAreas.length > 0) && (
+                        <div className="border-t dark:border-slate-700 px-4 py-3 space-y-2">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Áreas</p>
+                            {[...areaEntries, ...uniqueExtraAreas.map(a => [a, 0] as [string, number])].map(([area, count]) => {
+                                const activeHere = sessionsByArea[area as string] || [];
+                                const barPct = maxAreaCount > 0 ? ((count as number) / maxAreaCount) * 100 : 0;
+                                return (
+                                    <div key={area as string}>
+                                        <div className="flex items-center justify-between mb-0.5">
+                                            <div className="flex items-center gap-1.5 min-w-0">
+                                                <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">{area as string}</span>
+                                                {activeHere.map(s => (
+                                                    <span key={s.id} className="text-[10px] bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 px-1.5 py-0.5 rounded-full font-medium flex items-center gap-0.5 shrink-0">
+                                                        <div className="w-1 h-1 bg-emerald-400 rounded-full animate-pulse" />
+                                                        {s.operator.split(' ')[0]}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 ml-2 shrink-0">{(count as number).toLocaleString()}</span>
+                                        </div>
+                                        <div className="h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                                            <div
+                                                className="h-full rounded-full transition-all duration-700"
+                                                style={{
+                                                    width: `${barPct}%`,
+                                                    background: activeHere.length > 0
+                                                        ? 'linear-gradient(90deg, #10b981, #34d399)'
+                                                        : 'linear-gradient(90deg, #38bdf8, #0ea5e9)',
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ── SESIONES ACTIVAS ──────────────────────────────────────────── */}
             <div className="flex items-center gap-2">
                 <Wifi size={16} className="text-emerald-500" />
                 <h2 className="font-bold text-slate-800 dark:text-white">Sesiones de Escáner</h2>
@@ -1156,7 +1275,7 @@ const SessionsAdminTab = ({ addToast, sucursalId }: { addToast: (m: string, t?: 
             </div>
 
             {activeSessions.length === 0 && (
-                <div className="text-center py-12 text-slate-400">
+                <div className="text-center py-8 text-slate-400">
                     <Users className="w-12 h-12 mx-auto mb-2 opacity-30" />
                     <p className="font-medium">Sin sesiones activas</p>
                     <p className="text-sm mt-1">Cuando un scanner inicie un escaneo aparecerá aquí</p>
@@ -2058,6 +2177,136 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
         addToast('CSV exportado', 'success');
     };
 
+    const exportExcel = () => {
+        if (!folio) return;
+        const rowsSorted = [...report.rows].sort((a, b) => a.diff - b.diff);
+
+        const statusLabel = (s: string, diff: number) => {
+            if (s === 'faltante') return `Faltante (${diff})`;
+            if (s === 'sobrante') return `Sobrante (+${diff})`;
+            if (s === 'parcial')  return `Parcial (${diff})`;
+            return 'OK';
+        };
+        const bgByStatus: Record<string, string> = {
+            faltante: '#FEE2E2', sobrante: '#DCFCE7', parcial: '#FEF3C7', ok: '#FFFFFF',
+        };
+
+        const cell = (val: string | number, styleId: string) =>
+            `<Cell ss:StyleID="${styleId}"><Data ss:Type="${typeof val === 'number' ? 'Number' : 'String'}">${String(val).replace(/&/g,'&amp;').replace(/</g,'&lt;')}</Data></Cell>`;
+
+        const dataRows = rowsSorted.map(r => {
+            const bg = bgByStatus[r.status] || '#FFFFFF';
+            const sId = `s_${bg.replace('#', '')}`;
+            const diffSId = r.diff < 0 ? 'neg' : r.diff > 0 ? 'pos' : sId;
+            return `<Row>
+              ${cell(r.mod, sId)}
+              ${cell(r.color, sId)}
+              ${cell(formatTallaConCategoria(r.talla, r.vkey), sId)}
+              ${cell(r.teo, sId)}
+              ${cell(r.fis, sId)}
+              ${cell(r.diff, diffSId)}
+              ${cell(statusLabel(r.status, r.diff), sId)}
+            </Row>`;
+        }).join('');
+
+        const totalTeo  = rowsSorted.reduce((a, r) => a + r.teo, 0);
+        const totalFis  = rowsSorted.reduce((a, r) => a + r.fis, 0);
+        const totalDiff = totalFis - totalTeo;
+
+        const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:x="urn:schemas-microsoft-com:office:excel">
+<Styles>
+  <Style ss:ID="header">
+    <Font ss:Bold="1" ss:Color="#FFFFFF" ss:Size="10"/>
+    <Interior ss:Color="#0F172A" ss:Pattern="Solid"/>
+    <Alignment ss:Horizontal="Center"/>
+  </Style>
+  <Style ss:ID="title">
+    <Font ss:Bold="1" ss:Size="13" ss:Color="#0F172A"/>
+  </Style>
+  <Style ss:ID="kpi_lbl">
+    <Font ss:Bold="1" ss:Size="9" ss:Color="#64748B"/>
+  </Style>
+  <Style ss:ID="kpi_val">
+    <Font ss:Bold="1" ss:Size="14" ss:Color="#0EA5E9"/>
+  </Style>
+  <Style ss:ID="s_FFFFFF"><Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/></Style>
+  <Style ss:ID="s_FEE2E2"><Interior ss:Color="#FEE2E2" ss:Pattern="Solid"/></Style>
+  <Style ss:ID="s_DCFCE7"><Interior ss:Color="#DCFCE7" ss:Pattern="Solid"/></Style>
+  <Style ss:ID="s_FEF3C7"><Interior ss:Color="#FEF3C7" ss:Pattern="Solid"/></Style>
+  <Style ss:ID="neg">
+    <Interior ss:Color="#FEE2E2" ss:Pattern="Solid"/>
+    <Font ss:Bold="1" ss:Color="#DC2626"/>
+  </Style>
+  <Style ss:ID="pos">
+    <Interior ss:Color="#DCFCE7" ss:Pattern="Solid"/>
+    <Font ss:Bold="1" ss:Color="#16A34A"/>
+  </Style>
+  <Style ss:ID="total">
+    <Font ss:Bold="1" ss:Size="10"/>
+    <Interior ss:Color="#F1F5F9" ss:Pattern="Solid"/>
+  </Style>
+</Styles>
+<Worksheet ss:Name="Reporte">
+<Table ss:DefaultColumnWidth="90">
+  <Column ss:Width="130"/>
+  <Column ss:Width="100"/>
+  <Column ss:Width="60"/>
+  <Column ss:Width="70"/>
+  <Column ss:Width="70"/>
+  <Column ss:Width="80"/>
+  <Column ss:Width="120"/>
+  <Row>
+    <Cell ss:MergeAcross="6" ss:StyleID="title">
+      <Data ss:Type="String">Conteo Cíclico Pro — ${folio.name}</Data>
+    </Cell>
+  </Row>
+  <Row>
+    <Cell ss:MergeAcross="6">
+      <Data ss:Type="String">${folio.almacen}${folio.temporada ? ' · ' + folio.temporada : ''} · ${new Date().toLocaleDateString('es-MX')}</Data>
+    </Cell>
+  </Row>
+  <Row/>
+  <Row>
+    <Cell ss:StyleID="kpi_lbl"><Data ss:Type="String">Teórico</Data></Cell>
+    <Cell ss:StyleID="kpi_val"><Data ss:Type="Number">${totalTeo}</Data></Cell>
+    <Cell ss:StyleID="kpi_lbl"><Data ss:Type="String">Físico</Data></Cell>
+    <Cell ss:StyleID="kpi_val"><Data ss:Type="Number">${totalFis}</Data></Cell>
+    <Cell ss:StyleID="kpi_lbl"><Data ss:Type="String">Diferencia</Data></Cell>
+    <Cell ss:StyleID="${totalDiff < 0 ? 'neg' : totalDiff > 0 ? 'pos' : 'total'}"><Data ss:Type="Number">${totalDiff}</Data></Cell>
+    <Cell ss:StyleID="kpi_lbl"><Data ss:Type="String">Cobertura: ${Math.round((totalFis / Math.max(totalTeo, 1)) * 100)}%</Data></Cell>
+  </Row>
+  <Row/>
+  <Row>
+    ${['Modelo','Color','Talla','Teórico','Físico','Diferencia','Estado'].map(h => `<Cell ss:StyleID="header"><Data ss:Type="String">${h}</Data></Cell>`).join('')}
+  </Row>
+  ${dataRows}
+  <Row>
+    <Cell ss:StyleID="total"><Data ss:Type="String">TOTAL</Data></Cell>
+    <Cell ss:StyleID="total"/>
+    <Cell ss:StyleID="total"/>
+    <Cell ss:StyleID="total"><Data ss:Type="Number">${totalTeo}</Data></Cell>
+    <Cell ss:StyleID="total"><Data ss:Type="Number">${totalFis}</Data></Cell>
+    <Cell ss:StyleID="${totalDiff < 0 ? 'neg' : totalDiff > 0 ? 'pos' : 'total'}"><Data ss:Type="Number">${totalDiff}</Data></Cell>
+    <Cell ss:StyleID="total"/>
+  </Row>
+</Table>
+</Worksheet>
+</Workbook>`;
+
+        const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = url;
+        a.download = `reporte-${folio.name}-${new Date().toLocaleDateString('es-MX').replace(/\//g,'-')}.xls`;
+        a.click();
+        URL.revokeObjectURL(url);
+        addToast('Excel exportado', 'success');
+    };
+
     const printAjustes = () => {
         if (!folio) return;
         const html = `<!DOCTYPE html>
@@ -2674,15 +2923,28 @@ ${ajustesSugeridos.map(a => `
                                 </button>
                                 )}
 
-                                {/* Opción 3: Exportar CSV */}
-                                <button onClick={() => { setShowPrintModal(false); exportCSV(); }}
+                                {/* Opción 3: Exportar Excel */}
+                                <button onClick={() => { setShowPrintModal(false); exportExcel(); }}
                                     className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                                     <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center flex-shrink-0">
                                         <Download size={20} className="text-emerald-500" />
                                     </div>
                                     <div className="flex-1 text-left">
+                                        <p className="text-sm font-semibold text-slate-800 dark:text-white">Exportar Excel <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-bold ml-1">.xls</span></p>
+                                        <p className="text-xs text-slate-400 mt-0.5">Con colores por estado · faltante, sobrante, parcial</p>
+                                    </div>
+                                    <ChevronRight size={16} className="text-slate-300" />
+                                </button>
+
+                                {/* Opción 4: Exportar CSV */}
+                                <button onClick={() => { setShowPrintModal(false); exportCSV(); }}
+                                    className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                                    <div className="w-10 h-10 rounded-xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center flex-shrink-0">
+                                        <Download size={20} className="text-slate-400" />
+                                    </div>
+                                    <div className="flex-1 text-left">
                                         <p className="text-sm font-semibold text-slate-800 dark:text-white">Exportar CSV</p>
-                                        <p className="text-xs text-slate-400 mt-0.5">Para Excel, Google Sheets u otras herramientas</p>
+                                        <p className="text-xs text-slate-400 mt-0.5">Datos planos para Google Sheets u otras herramientas</p>
                                     </div>
                                     <ChevronRight size={16} className="text-slate-300" />
                                 </button>
@@ -3267,7 +3529,7 @@ const SettingsPanel = ({ onClose }: { onClose: () => void }) => {
 };
 
 // ─── BANNER OFFLINE ───────────────────────────────────────────────────────────
-const OfflineBanner = () => {
+export const useOnlineStatus = () => {
     const [online, setOnline] = React.useState(navigator.onLine);
     React.useEffect(() => {
         const on = () => setOnline(true);
@@ -3276,10 +3538,53 @@ const OfflineBanner = () => {
         window.addEventListener('offline', off);
         return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
     }, []);
-    if (online) return null;
+    return online;
+};
+
+const OfflineBanner = () => {
+    const [online, setOnline] = React.useState(navigator.onLine);
+    const [justReconnected, setJustReconnected] = React.useState(false);
+    const [offlineSince, setOfflineSince] = React.useState<number | null>(null);
+    const wasOffline = React.useRef(false);
+
+    React.useEffect(() => {
+        const on = () => {
+            setOnline(true);
+            setOfflineSince(null);
+            if (wasOffline.current) {
+                setJustReconnected(true);
+                setTimeout(() => setJustReconnected(false), 3500);
+            }
+            wasOffline.current = false;
+        };
+        const off = () => {
+            setOnline(false);
+            setOfflineSince(Date.now());
+            wasOffline.current = true;
+        };
+        window.addEventListener('online', on);
+        window.addEventListener('offline', off);
+        return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
+    }, []);
+
+    if (online && !justReconnected) return null;
+
+    if (justReconnected) return (
+        <div style={{ animation: 'slideDown 0.3s ease' }} className="bg-emerald-500 text-white px-4 py-2.5 flex items-center gap-2 text-sm font-semibold z-30">
+            <Wifi size={15} />
+            <span>Conexión restaurada — sincronizando datos...</span>
+        </div>
+    );
+
+    const minutos = offlineSince ? Math.floor((Date.now() - offlineSince) / 60000) : 0;
+
     return (
-        <div className="bg-amber-500 text-white px-4 py-2 flex items-center gap-2 text-xs font-medium z-30">
-            <span>📵</span> Sin conexion — los datos se sincronizaran al reconectarse
+        <div style={{ animation: 'slideDown 0.3s ease' }} className="bg-red-500 text-white px-4 py-2.5 flex items-center gap-2 text-sm font-semibold z-30">
+            <AlertTriangle size={15} className="flex-shrink-0" />
+            <span className="flex-1">
+                Sin conexión{minutos > 0 ? ` · ${minutos} min` : ''} — los escaneos se guardarán al reconectarse
+            </span>
+            <div className="w-2 h-2 rounded-full bg-white/60 animate-pulse flex-shrink-0" />
         </div>
     );
 };
@@ -4070,6 +4375,7 @@ const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => void }) =>
 
 // ─── MAIN APP v4 ──────────────────────────────────────────────────────────────
 const App: React.FC = () => {
+    const isOnline = useOnlineStatus();
     const [session, setSession]   = useState<AppSession | null>(null);
     const [activeTab, setActiveTab] = useState<Tab>('folio');
     const [folioId, setFolioId]   = useState<string | null>(null);
@@ -4288,7 +4594,10 @@ const App: React.FC = () => {
                     )}
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                    <div className="flex items-center gap-1 text-xs text-emerald-500 font-medium"><Wifi size={12}/> Live</div>
+                    {isOnline
+                        ? <div className="flex items-center gap-1 text-xs text-emerald-500 font-medium"><Wifi size={12}/> Live</div>
+                        : <div className="flex items-center gap-1 text-xs text-red-500 font-medium"><AlertTriangle size={12}/> Offline</div>
+                    }
                     {role === 'admin' && <div className="flex items-center gap-1 text-xs text-slate-400"><Timer size={12}/>{formatElapsed()}</div>}
                     <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${role === 'admin' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}`}>
                         {session.nombre}
@@ -4306,7 +4615,7 @@ const App: React.FC = () => {
                     {activeTab === 'folio'       && role === 'admin'   && <FolioTab onJoin={(id) => { setFolioId(id); setActiveTab('reporte'); }} onCreate={(id) => setFolioId(id)} addToast={addToast} colors={colors} catalog={catalog} sucursalId={sucursalId ?? undefined} />}
                     {activeTab === 'existencias' && role === 'admin'   && <StockTab folioId={folioId} catalog={catalog} colors={colors} onUpdate={() => {}} addToast={addToast} sucursalId={sucursalId ?? undefined} />}
                     {activeTab === 'escanear'    && role === 'scanner' && <ScannerSessionTab colors={colors} catalog={catalog} folio={folio} addToast={addToast} appSession={session} sucursalId={sucursalId ?? undefined} />}
-                    {activeTab === 'sesiones'    && role === 'admin'   && <SessionsAdminTab addToast={addToast} sucursalId={sucursalId ?? undefined} />}
+                    {activeTab === 'sesiones'    && role === 'admin'   && <SessionsAdminTab addToast={addToast} sucursalId={sucursalId ?? undefined} folio={folio} scans={scans} />}
                     {activeTab === 'reporte'     && role === 'admin'   && <ReportTab folio={folio} scans={scans} onTabChange={handleTabChange} addToast={addToast} />}
                     {activeTab === 'consulta'    && role === 'admin'   && <QueryTab folio={folio} scans={scans} />}
                     {activeTab === 'historial'   && role === 'admin'   && <UbicacionesTab sucursalId={sucursalId ?? undefined} folio={folio} scans={scans} addToast={addToast} />}
@@ -4328,7 +4637,10 @@ const App: React.FC = () => {
                 </nav>
             )}
 
-            <style>{`@keyframes confetti { from { transform: translateY(-20px) rotate(0deg); opacity:1; } to { transform: translateY(100vh) rotate(720deg); opacity:0; } }`}</style>
+            <style>{`
+                @keyframes confetti { from { transform: translateY(-20px) rotate(0deg); opacity:1; } to { transform: translateY(100vh) rotate(720deg); opacity:0; } }
+                @keyframes slideDown { from { transform: translateY(-100%); opacity:0; } to { transform: translateY(0); opacity:1; } }
+            `}</style>
             {showSettings  && <SettingsPanel  onClose={() => setShowSettings(false)} />}
             {showOperators && sucursalId && <OperatorsPanel sucursalId={sucursalId} onClose={() => setShowOperators(false)} addToast={addToast} />}
         </div>

@@ -453,6 +453,44 @@ const DEFAULT_COLORS: ColorMap = {
     'AMBAR': '919', 'GUINDA': '323', 'MARSALA': '391', 'COBRE': '263',
 };
 
+// ─── CONFIRM HOOK ────────────────────────────────────────────────────────────
+const useConfirm = () => {
+    const [state, setState] = useState<{ title: string; msg: string; confirmLabel?: string; resolve: (v: boolean) => void } | null>(null);
+
+    const confirm = (msg: string, title = '¿Confirmar?', confirmLabel = 'Eliminar'): Promise<boolean> =>
+        new Promise(resolve => setState({ msg, title, confirmLabel, resolve }));
+
+    const close = (val: boolean) => { state?.resolve(val); setState(null); };
+
+    const modal = state ? (
+        <div className="fixed inset-0 bg-black/60 z-[60] flex items-end sm:items-center justify-center p-4" onClick={() => close(false)}>
+            <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4" onClick={e => e.stopPropagation()}>
+                <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center flex-shrink-0">
+                        <AlertTriangle size={18} className="text-red-500" />
+                    </div>
+                    <div>
+                        <p className="font-bold text-slate-800 dark:text-white">{state.title}</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{state.msg}</p>
+                    </div>
+                </div>
+                <div className="flex gap-2 pt-1">
+                    <button onClick={() => close(false)}
+                        className="flex-1 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-white py-2.5 rounded-xl font-medium text-sm active:scale-95">
+                        Cancelar
+                    </button>
+                    <button onClick={() => close(true)}
+                        className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2.5 rounded-xl font-bold text-sm active:scale-95">
+                        {state.confirmLabel}
+                    </button>
+                </div>
+            </div>
+        </div>
+    ) : null;
+
+    return { confirm, modal };
+};
+
 // ─── TOAST SYSTEM ────────────────────────────────────────────────────────────
 const ToastContainer = ({ toasts, onRemove }: { toasts: Toast[]; onRemove: (id: string) => void }) => (
     <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 max-w-xs w-full pointer-events-none">
@@ -563,6 +601,7 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
     const [cameraOn, setCameraOn] = useState(false);
     const [loading, setLoading] = useState(false);
     const [savedSessions, setSavedSessions] = useState<ScanSession[]>([]);
+    const { confirm: askConfirm, modal: confirmModal } = useConfirm();
     const inputRef = useRef<HTMLInputElement>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
@@ -787,8 +826,13 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
         addToast('CSV exportado', 'success');
     };
 
-    const confirmNewSession = () => {
-        if (!confirm('¿Iniciar nuevo escaneo? Se borrarán los escaneos actuales.')) return;
+    const confirmNewSession = async () => {
+        const ok = await askConfirm(
+            'Los escaneos actuales quedarán guardados en el historial.',
+            '¿Iniciar nuevo escaneo?',
+            'Nuevo escaneo'
+        );
+        if (!ok) return;
         localStorage.removeItem('conteo:sessionId');
         setCurrentSession(null);
         setSessionItems([]);
@@ -961,6 +1005,7 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
             </div>
 
             {showConflict && <ConflictModal />}
+            {confirmModal}
             {/* Input */}
             <div className="bg-white rounded-xl p-4 shadow-sm border space-y-3">
                 <div className="flex gap-2">
@@ -1050,6 +1095,7 @@ const SessionsAdminTab = ({ addToast, sucursalId, folio, scans }: {
     const [loadingItems, setLoadingItems] = useState<string | null>(null);
     const [syncing, setSyncing] = useState<string | null>(null);
     const [now, setNow] = useState(Date.now());
+    const { confirm: askConfirm, modal: confirmModal } = useConfirm();
 
     useEffect(() => {
         const unsub = fbSubscribeToAllSessions((s) => setSessions(s as ScanSession[]), sucursalId);
@@ -1091,7 +1137,8 @@ const SessionsAdminTab = ({ addToast, sucursalId, folio, scans }: {
     };
 
     const deleteSession = async (sessionId: string) => {
-        if (!confirm('¿Eliminar esta sesión?')) return;
+        const ok = await askConfirm('Esta acción no se puede deshacer.', '¿Eliminar sesión?');
+        if (!ok) return;
         await fbDeleteSession(sessionId, sucursalId);
         addToast('Sesión eliminada', 'info');
     };
@@ -1334,6 +1381,7 @@ const SessionsAdminTab = ({ addToast, sucursalId, folio, scans }: {
                     )}
                 </div>
             ))}
+            {confirmModal}
         </div>
     );
 };
@@ -1354,6 +1402,7 @@ const FolioTab = ({ onJoin, onCreate, addToast, colors, catalog, sucursalId }: {
     const [expandedNote, setExpandedNote] = useState<string | null>(null);
     const [closingFolio, setClosingFolio] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
+    const { confirm: askConfirm, modal: confirmModal } = useConfirm();
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -1417,7 +1466,8 @@ const FolioTab = ({ onJoin, onCreate, addToast, colors, catalog, sucursalId }: {
     };
 
     const handleDelete = async (fid: string) => {
-        if (!confirm('¿Eliminar este inventario y todos sus escaneos?')) return;
+        const ok = await askConfirm('Se eliminarán todos los escaneos del inventario. Esta acción no se puede deshacer.', '¿Eliminar inventario?');
+        if (!ok) return;
         await fbDeleteFolio(fid, sucursalId);
         addToast('Inventario eliminado', 'warning');
         await load();
@@ -1534,6 +1584,7 @@ const FolioTab = ({ onJoin, onCreate, addToast, colors, catalog, sucursalId }: {
                     )}
                 </div>
             ))}
+            {confirmModal}
         </div>
     );
 };
@@ -3354,6 +3405,13 @@ const DictTab = ({ colors, onUpdate, addToast }: { colors: ColorMap; onUpdate: (
     const [newCode, setNewCode] = useState('');
     const [editing, setEditing] = useState<string | null>(null);
     const [editCode, setEditCode] = useState('');
+    const { confirm: askConfirm, modal: confirmModal } = useConfirm();
+
+    const handleDeleteColor = async (name: string) => {
+        const ok = await askConfirm(`El color "${name}" será eliminado del diccionario.`, '¿Eliminar color?');
+        if (!ok) return;
+        const c = { ...colors }; delete c[name]; onUpdate(c);
+    };
 
     const COLOR_SWATCHES: { [k: string]: string } = {
         'NEGRO': '#1a1a1a', 'BLANCO': '#f8f8f8', 'ROJO': '#dc2626', 'AZUL': '#2563eb',
@@ -3403,12 +3461,13 @@ const DictTab = ({ colors, onUpdate, addToast }: { colors: ColorMap; onUpdate: (
                             <div className="flex items-center gap-2">
                                 <span className="text-xs font-mono bg-slate-100 px-2 py-0.5 rounded">{code}</span>
                                 <button onClick={() => { setEditing(name); setEditCode(code); }} className="text-slate-400"><Edit2 size={14} /></button>
-                                <button onClick={() => { if (!confirm(`¿Eliminar "${name}"?`)) return; const c = { ...colors }; delete c[name]; onUpdate(c); }} className="text-red-400"><Trash2 size={14} /></button>
+                                <button onClick={() => handleDeleteColor(name)} className="text-red-400"><Trash2 size={14} /></button>
                             </div>
                         )}
                     </div>
                 ))}
             </div>
+            {confirmModal}
         </div>
     );
 };
@@ -3669,6 +3728,7 @@ const OperatorsPanel = ({ sucursalId, onClose, addToast }: { sucursalId: string;
     const [nombre, setNombre]   = React.useState('');
     const [pin, setPin]         = React.useState('');
     const [rol, setRol]         = React.useState<'scanner'>('scanner');
+    const { confirm: askConfirm, modal: confirmModal } = useConfirm();
 
     const reload = async () => { setLoading(true); const list = await fbGetOperadores(sucursalId); setOps(list); setLoading(false); };
     React.useEffect(() => { reload(); }, [sucursalId]);
@@ -3697,7 +3757,8 @@ const OperatorsPanel = ({ sucursalId, onClose, addToast }: { sucursalId: string;
     };
 
     const handleDelete = async (op: any) => {
-        if (!confirm('Eliminar a ' + op.nombre + '?')) return;
+        const ok = await askConfirm(`Se eliminará permanentemente a ${op.nombre}.`, '¿Eliminar operador?');
+        if (!ok) return;
         await fbDeleteOperador(sucursalId, op.id);
         await reload();
         addToast(op.nombre + ' eliminado', 'warning');
@@ -3759,6 +3820,7 @@ const OperatorsPanel = ({ sucursalId, onClose, addToast }: { sucursalId: string;
                     <div className="h-4" />
                 </div>
             </div>
+            {confirmModal}
         </div>
     );
 };
@@ -3781,6 +3843,7 @@ const SuperAdminPanel = ({ onLogout }: { onLogout: () => void }) => {
     const [filtroEstado, setFiltroEstado] = React.useState('todos');
     const [fechaDesde, setFechaDesde] = React.useState('');
     const [fechaHasta, setFechaHasta] = React.useState('');
+    const { confirm: askConfirm, modal: confirmModal } = useConfirm();
 
     const reload = async () => {
         setLoading(true);
@@ -3851,7 +3914,8 @@ const SuperAdminPanel = ({ onLogout }: { onLogout: () => void }) => {
     };
 
     const handleDelete = async (s: any) => {
-        if (!confirm('Eliminar sucursal ' + s.nombre + ' y TODOS sus datos? Esta accion no se puede deshacer.')) return;
+        const ok = await askConfirm(`Se eliminarán la sucursal "${s.nombre}" y TODOS sus datos. Esta acción no se puede deshacer.`, '¿Eliminar sucursal?');
+        if (!ok) return;
         await fbDeleteSucursal(s.id);
         await reload();
     };
@@ -4410,6 +4474,7 @@ const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => void }) =>
                 )}
             </div>
             <p className="mt-6 text-white/20 text-xs">Conteo Ciclico Pro v4.0 · Multi-Sucursal</p>
+            {confirmModal}
         </div>
     );
 };

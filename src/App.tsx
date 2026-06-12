@@ -624,6 +624,17 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
         }
     }, [sucursalId]);
 
+    // Advertencia al cerrar/recargar con sesión activa
+    useEffect(() => {
+        if (phase !== 'scanning' || !currentSession) return;
+        const handler = (e: BeforeUnloadEvent) => {
+            e.preventDefault();
+            e.returnValue = '';
+        };
+        window.addEventListener('beforeunload', handler);
+        return () => window.removeEventListener('beforeunload', handler);
+    }, [phase, currentSession]);
+
     // Heartbeat: actualiza lastSeen cada 30 segundos para presencia en tiempo real
     useEffect(() => {
         if (!currentSession) return;

@@ -3070,6 +3070,8 @@ const UbicacionesTab = ({ sucursalId, folio, scans, addToast }: {
     const [loading, setLoading]         = useState(true);
     const [search, setSearch]           = useState('');
     const [sortBy, setSortBy]           = useState<'mod' | 'area' | 'fecha'>('mod');
+    const [filterArea, setFilterArea]   = useState<string>('');
+    const [filterCat, setFilterCat]     = useState<'all' | 'calzado' | 'ropa'>('all');
 
     // Cargar ubicaciones guardadas
     const loadUbicaciones = async () => {
@@ -3115,21 +3117,29 @@ const UbicacionesTab = ({ sucursalId, folio, scans, addToast }: {
         addToast(`${nuevas.length} ubicaciones actualizadas`, 'success');
     };
 
+    const areas = useMemo(() =>
+        [...new Set(ubicaciones.map(u => u.area as string))].sort(),
+    [ubicaciones]);
+
     const filtered = useMemo(() => {
         const q = search.trim().toLowerCase();
-        const rows = q
-            ? ubicaciones.filter(u =>
-                u.mod?.toLowerCase().includes(q) ||
-                u.color?.toLowerCase().includes(q) ||
-                u.talla?.toLowerCase().includes(q) ||
-                u.area?.toLowerCase().includes(q))
-            : ubicaciones;
+        const rows = ubicaciones.filter(u => {
+            if (q && !u.mod?.toLowerCase().includes(q) && !u.color?.toLowerCase().includes(q) &&
+                !u.talla?.toLowerCase().includes(q) && !u.area?.toLowerCase().includes(q)) return false;
+            if (filterArea && u.area !== filterArea) return false;
+            if (filterCat !== 'all') {
+                const isRopa = (u.vkey as string)?.startsWith('R|');
+                if (filterCat === 'ropa'    && !isRopa) return false;
+                if (filterCat === 'calzado' &&  isRopa) return false;
+            }
+            return true;
+        });
         return [...rows].sort((a, b) => {
             if (sortBy === 'mod')   return a.mod.localeCompare(b.mod);
             if (sortBy === 'area')  return a.area.localeCompare(b.area);
             return b.updatedAt - a.updatedAt;
         });
-    }, [ubicaciones, search, sortBy]);
+    }, [ubicaciones, search, sortBy, filterArea, filterCat]);
 
     // Agrupar por área para vista de mapa
     const porArea = useMemo(() => {
@@ -3172,7 +3182,7 @@ const UbicacionesTab = ({ sucursalId, folio, scans, addToast }: {
 
             {ubicaciones.length > 0 && (
                 <>
-                {/* Buscador y ordenar */}
+                {/* Buscador y filtros */}
                 <div className="space-y-2">
                     <div className="relative">
                         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -3187,6 +3197,35 @@ const UbicacionesTab = ({ sucursalId, folio, scans, addToast }: {
                                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">×</button>
                         )}
                     </div>
+
+                    {/* Filtro por área */}
+                    {areas.length > 1 && (
+                        <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+                            <button onClick={() => setFilterArea('')}
+                                className={`px-3 py-1 rounded-full text-xs font-medium flex-shrink-0 transition-colors ${filterArea === '' ? 'bg-slate-700 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                                Todas las áreas
+                            </button>
+                            {areas.map(a => (
+                                <button key={a} onClick={() => setFilterArea(filterArea === a ? '' : a)}
+                                    className={`px-3 py-1 rounded-full text-xs font-medium flex-shrink-0 transition-colors ${filterArea === a ? 'bg-sky-500 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                                    📍 {a}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Filtro por categoría */}
+                    {ubicaciones.some(u => (u.vkey as string)?.startsWith('R|')) && (
+                        <div className="flex gap-1.5">
+                            {(['all','calzado','ropa'] as const).map(c => (
+                                <button key={c} onClick={() => setFilterCat(c)}
+                                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${filterCat === c ? 'bg-purple-500 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                                    {c === 'all' ? 'Todo' : c === 'calzado' ? '👟 Calzado' : '👕 Ropa'}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
                     <div className="flex items-center gap-2">
                         <span className="text-xs text-slate-400 flex-shrink-0">Ordenar:</span>
                         {(['mod','area','fecha'] as const).map(s => (
@@ -3195,7 +3234,9 @@ const UbicacionesTab = ({ sucursalId, folio, scans, addToast }: {
                                 {s === 'mod' ? 'Modelo' : s === 'area' ? 'Área' : 'Reciente'}
                             </button>
                         ))}
-                        <span className="text-xs text-slate-400 ml-auto">{filtered.length} SKU(s)</span>
+                        <span className="text-xs text-slate-400 ml-auto">
+                            {filtered.length}{filtered.length !== ubicaciones.length ? `/${ubicaciones.length}` : ''} SKU(s)
+                        </span>
                     </div>
                 </div>
 

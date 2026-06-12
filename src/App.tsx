@@ -1059,25 +1059,55 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
                 </div>
             )}
 
-            {/* Recent scans list */}
-            {sessionItems.length > 0 && (
-                <div className="space-y-1">
-                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Últimos escaneos</p>
-                    {sessionItems.slice(0, 15).map(s => (
-                        <div key={s.id} className={`bg-white rounded-xl border px-4 py-2.5 flex justify-between items-center shadow-sm ${!s.recognized ? 'border-red-100 bg-red-50' : ''}`}>
-                            <div>
-                                {s.recognized ? (
-                                    <p className="text-sm font-semibold text-slate-700">{s.mod} · {s.color} · {formatTallaFromVkey(s.talla, s.vkey)}</p>
-                                ) : (
-                                    <p className="text-sm font-mono text-red-600">{s.code}</p>
-                                )}
-                                <p className="text-xs text-slate-400">{formatDate(s.ts)}</p>
-                            </div>
-                            <div className={`w-2.5 h-2.5 rounded-full ${s.recognized ? 'bg-emerald-400' : 'bg-red-400'}`} />
+            {/* Recent scans list — últimos 5 con conteo por SKU */}
+            {sessionItems.length > 0 && (() => {
+                const vkeyCounts: Record<string, number> = {};
+                for (const s of sessionItems) { vkeyCounts[s.vkey || s.code] = (vkeyCounts[s.vkey || s.code] || 0) + 1; }
+                const last5 = [...sessionItems].reverse().slice(0, 5);
+                return (
+                    <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Últimos escaneos</p>
+                            <p className="text-xs text-slate-400">{sessionItems.length} total en sesión</p>
                         </div>
-                    ))}
-                </div>
-            )}
+                        {last5.map((s, i) => {
+                            const key = s.vkey || s.code;
+                            const count = vkeyCounts[key] || 1;
+                            const isRecent = i === 0;
+                            const isHighCount = count >= 4;
+                            return (
+                                <div key={s.id} className={`rounded-xl border px-4 py-3 flex justify-between items-center shadow-sm transition-all
+                                    ${!s.recognized ? 'bg-red-50 border-red-200' :
+                                      isHighCount ? 'bg-amber-50 border-amber-200' :
+                                      isRecent ? 'bg-emerald-50 border-emerald-200' :
+                                      'bg-white border-slate-100'}`}>
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-white text-xs font-black
+                                            ${!s.recognized ? 'bg-red-400' : isHighCount ? 'bg-amber-400' : 'bg-emerald-400'}`}>
+                                            {i + 1}
+                                        </div>
+                                        <div className="min-w-0">
+                                            {s.recognized ? (
+                                                <p className="text-sm font-bold text-slate-800 truncate">{s.mod} · {s.color} · {formatTallaFromVkey(s.talla, s.vkey)}</p>
+                                            ) : (
+                                                <p className="text-sm font-mono font-bold text-red-600 truncate">{s.code}</p>
+                                            )}
+                                            <p className="text-[10px] text-slate-400">{formatDate(s.ts)}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-col items-end flex-shrink-0 ml-2">
+                                        <span className={`text-xs font-black px-2 py-0.5 rounded-full
+                                            ${isHighCount ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                                            ×{count}
+                                        </span>
+                                        {isHighCount && <span className="text-[9px] text-amber-500 font-bold mt-0.5">repetido</span>}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                );
+            })()}
         </div>
     );
 };

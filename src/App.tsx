@@ -3900,8 +3900,10 @@ const SuperAdminPanel = ({ onLogout }: { onLogout: () => void }) => {
     const [usuario, setUsuario]       = React.useState('');
     const [password, setPassword]     = React.useState('');
     const [showSettings, setShowSettings] = React.useState(false);
-    const [vista, setVista]           = React.useState<'sucursales'|'reporte'>('sucursales');
+    const [vista, setVista]           = React.useState<'dashboard'|'sucursales'|'reporte'>('dashboard');
     const [viewMode, setViewMode]       = React.useState<'cards'|'list'>('cards');
+    const [dashSessions, setDashSessions] = React.useState<Record<string, any[]>>({});
+    const [dashNow, setDashNow]         = React.useState(Date.now());
     const [foliosAll, setFoliosAll]   = React.useState<any[]>([]);
     const [loadingRep, setLoadingRep] = React.useState(false);
     const [filtroSuc, setFiltroSuc]   = React.useState('todas');
@@ -3925,6 +3927,24 @@ const SuperAdminPanel = ({ onLogout }: { onLogout: () => void }) => {
         setLoadingRep(false);
     };
     React.useEffect(() => { if (vista === 'reporte') loadReporte(); }, [vista]);
+
+    // Suscribir a sesiones de cada sucursal para el dashboard en tiempo real
+    const sucursalIds = sucursales.map((s: any) => s.id).join(',');
+    React.useEffect(() => {
+        if (sucursales.length === 0) return;
+        const unsubs = sucursales.filter((s: any) => s.activa).map((s: any) =>
+            fbSubscribeToAllSessions((sessions: any[]) => {
+                setDashSessions(prev => ({ ...prev, [s.id]: sessions }));
+            }, s.id)
+        );
+        return () => unsubs.forEach((u: any) => u());
+    }, [sucursalIds]);
+
+    // Ticker para refrescar "activo ahora" cada 15s
+    React.useEffect(() => {
+        const iv = setInterval(() => setDashNow(Date.now()), 15_000);
+        return () => clearInterval(iv);
+    }, []);
 
     const foliosFiltrados = React.useMemo(() => {
         return foliosAll.filter(f => {
@@ -3952,6 +3972,21 @@ const SuperAdminPanel = ({ onLogout }: { onLogout: () => void }) => {
         });
         return { total, abiertos, cerrados, porSucursal };
     }, [foliosFiltrados]);
+
+    const dashStats = React.useMemo(() => {
+        const ACTIVE_THRESHOLD = 90_000;
+        const activeSucs = sucursales.filter((s: any) => s.activa).length;
+        const openInventarios = sucursales.reduce((a: number, s: any) => a + (s.openFolios || 0), 0);
+        const totalOps = sucursales.reduce((a: number, s: any) => a + (s.totalOperadores || 0), 0);
+        const totalFoliosHistorico = sucursales.reduce((a: number, s: any) => a + (s.totalFolios || 0), 0);
+        const branchActivity = sucursales.map((suc: any) => {
+            const sessions = dashSessions[suc.id] || [];
+            const activeSessions = sessions.filter((s: any) => s.active && (dashNow - (s.lastSeen ?? 0)) < ACTIVE_THRESHOLD);
+            return { suc, activeSessions, hasOpenInventory: (suc.openFolios || 0) > 0 };
+        });
+        const activeOpsNow = branchActivity.reduce((a: number, b: any) => a + b.activeSessions.length, 0);
+        return { activeSucs, openInventarios, totalOps, totalFoliosHistorico, activeOpsNow, branchActivity };
+    }, [sucursales, dashSessions, dashNow]);
 
     const openNew  = () => { setEditSuc(null); setNombre(''); setUsuario(''); setPassword(''); setShowForm(true); };
     const openEdit = (s: any) => { setEditSuc(s); setNombre(s.nombre); setUsuario(s.usuario); setPassword(''); setShowForm(true); };
@@ -4000,18 +4035,133 @@ const SuperAdminPanel = ({ onLogout }: { onLogout: () => void }) => {
             </div>
 
             {/* Tabs */}
-            <div className="flex border-b border-slate-800 px-4">
+            <div className="flex border-b border-slate-800 px-2 overflow-x-auto">
+                <button onClick={() => setVista('dashboard')}
+                    className={`px-3 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5 ${vista === 'dashboard' ? 'border-violet-400 text-violet-400' : 'border-transparent text-slate-400 hover:text-white'}`}>
+                    ⚡ Dashboard
+                    {dashStats.activeOpsNow > 0 && (
+                        <span className="min-w-[18px] h-[18px] bg-emerald-500 text-white text-[9px] font-black rounded-full flex items-center justify-center px-1 leading-none animate-pulse">
+                            {dashStats.activeOpsNow}
+                        </span>
+                    )}
+                </button>
                 <button onClick={() => setVista('sucursales')}
-                    className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${vista === 'sucursales' ? 'border-amber-400 text-amber-400' : 'border-transparent text-slate-400 hover:text-white'}`}>
+                    className={`px-3 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${vista === 'sucursales' ? 'border-amber-400 text-amber-400' : 'border-transparent text-slate-400 hover:text-white'}`}>
                     🏢 Sucursales
                 </button>
                 <button onClick={() => setVista('reporte')}
-                    className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${vista === 'reporte' ? 'border-sky-400 text-sky-400' : 'border-transparent text-slate-400 hover:text-white'}`}>
-                    📊 Reporte de inventarios
+                    className={`px-3 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${vista === 'reporte' ? 'border-sky-400 text-sky-400' : 'border-transparent text-slate-400 hover:text-white'}`}>
+                    📊 Reportes
                 </button>
             </div>
 
             <div className="p-4 space-y-4 max-w-2xl mx-auto pb-10">
+
+            {/* ── VISTA DASHBOARD ── */}
+            {vista === 'dashboard' && (
+                <div className="space-y-4 pt-1">
+                    {/* Metric cards */}
+                    <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700">
+                            <p className="text-3xl font-black text-sky-400">{loading ? '…' : dashStats.activeSucs}</p>
+                            <p className="text-xs font-semibold text-slate-300 mt-1">Sucursales activas</p>
+                            <p className="text-[10px] text-slate-500">{sucursales.length} registradas en total</p>
+                        </div>
+                        <div className={`rounded-2xl p-4 border transition-all ${dashStats.openInventarios > 0 ? 'bg-emerald-900/20 border-emerald-500/30' : 'bg-slate-800 border-slate-700'}`}>
+                            <p className={`text-3xl font-black ${dashStats.openInventarios > 0 ? 'text-emerald-400' : 'text-slate-500'}`}>{loading ? '…' : dashStats.openInventarios}</p>
+                            <p className="text-xs font-semibold text-slate-300 mt-1">Inventarios abiertos</p>
+                            <p className="text-[10px] text-slate-500">{dashStats.totalFoliosHistorico} folios en total</p>
+                        </div>
+                        <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700">
+                            <p className="text-3xl font-black text-amber-400">{loading ? '…' : dashStats.totalOps}</p>
+                            <p className="text-xs font-semibold text-slate-300 mt-1">Operadores registrados</p>
+                            <p className="text-[10px] text-slate-500">en todas las sucursales</p>
+                        </div>
+                        <div className={`rounded-2xl p-4 border transition-all ${dashStats.activeOpsNow > 0 ? 'bg-emerald-900/30 border-emerald-500/40' : 'bg-slate-800 border-slate-700'}`}>
+                            <div className="flex items-center gap-2">
+                                <p className={`text-3xl font-black ${dashStats.activeOpsNow > 0 ? 'text-emerald-400' : 'text-slate-500'}`}>{dashStats.activeOpsNow}</p>
+                                {dashStats.activeOpsNow > 0 && <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />}
+                            </div>
+                            <p className="text-xs font-semibold text-slate-300 mt-1">Operadores activos ahora</p>
+                            <p className="text-[10px] text-slate-500">últimos 90 s · actualiza cada 15 s</p>
+                        </div>
+                    </div>
+
+                    {/* Branch activity list */}
+                    <div className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden">
+                        <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
+                            <p className="text-sm font-bold text-white">Estado por sucursal</p>
+                            <button onClick={reload} className="text-xs text-slate-400 hover:text-white transition-colors">
+                                {loading ? 'Actualizando…' : '↻ Refrescar'}
+                            </button>
+                        </div>
+                        {loading ? (
+                            <p className="text-center text-slate-400 py-10 text-sm">Cargando sucursales…</p>
+                        ) : sucursales.length === 0 ? (
+                            <p className="text-center text-slate-500 py-10 text-sm">Sin sucursales registradas</p>
+                        ) : (
+                            <div className="divide-y divide-slate-700/50">
+                                {[...dashStats.branchActivity]
+                                    .sort((a: any, b: any) => {
+                                        if (a.suc.activa !== b.suc.activa) return b.suc.activa ? 1 : -1;
+                                        const aS = a.activeSessions.length > 0 ? 2 : a.hasOpenInventory ? 1 : 0;
+                                        const bS = b.activeSessions.length > 0 ? 2 : b.hasOpenInventory ? 1 : 0;
+                                        return bS - aS;
+                                    })
+                                    .map(({ suc, activeSessions, hasOpenInventory }: any) => {
+                                        const isActive = activeSessions.length > 0;
+                                        return (
+                                            <div key={suc.id} className={`flex items-center gap-3 px-4 py-3 transition-colors ${isActive ? 'bg-emerald-900/10' : ''} ${!suc.activa ? 'opacity-40' : ''}`}>
+                                                <div className="relative flex-shrink-0">
+                                                    <div className="w-10 h-10 rounded-xl bg-sky-500/20 border border-sky-500/30 flex items-center justify-center">
+                                                        <span className="text-sky-400 font-black">{suc.nombre.slice(0,1).toUpperCase()}</span>
+                                                    </div>
+                                                    {isActive && (
+                                                        <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-emerald-400 border-2 border-slate-800 animate-pulse" />
+                                                    )}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="font-semibold text-white text-sm truncate">{suc.nombre}</p>
+                                                    <p className="text-[10px] text-slate-400">
+                                                        {isActive
+                                                            ? `${activeSessions.length} operador${activeSessions.length !== 1 ? 'es' : ''} escaneando ahora`
+                                                            : hasOpenInventory
+                                                                ? 'Inventario abierto · sin operadores activos'
+                                                                : suc.activa ? 'Sin actividad reciente' : 'Desactivada'}
+                                                    </p>
+                                                </div>
+                                                <div className="flex-shrink-0 flex flex-col items-end gap-1">
+                                                    {isActive ? (
+                                                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold">● Activa</span>
+                                                    ) : hasOpenInventory ? (
+                                                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 font-bold">◐ Abierto</span>
+                                                    ) : null}
+                                                    <p className="text-[10px] text-slate-500">{suc.openFolios || 0} abiertos · {suc.totalFolios || 0} folios</p>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Quick nav */}
+                    <div className="grid grid-cols-2 gap-3">
+                        <button onClick={() => setVista('sucursales')}
+                            className="bg-slate-800 hover:bg-slate-700 rounded-2xl p-4 border border-slate-700 text-left transition-colors">
+                            <p className="text-xl mb-1">🏢</p>
+                            <p className="text-sm font-bold text-white">Sucursales</p>
+                            <p className="text-[11px] text-slate-400">Crear · editar · activar</p>
+                        </button>
+                        <button onClick={() => { loadReporte(); setVista('reporte'); }}
+                            className="bg-slate-800 hover:bg-slate-700 rounded-2xl p-4 border border-slate-700 text-left transition-colors">
+                            <p className="text-xl mb-1">📊</p>
+                            <p className="text-sm font-bold text-white">Reportes</p>
+                            <p className="text-[11px] text-slate-400">Inventarios · folios · filtros</p>
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* ── VISTA REPORTE ── */}
             {vista === 'reporte' && (

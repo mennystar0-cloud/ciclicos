@@ -4234,6 +4234,7 @@ const SuperAdminPanel = ({ onLogout }: { onLogout: () => void }) => {
             )}
 
             {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
+            {confirmModal}
             </div>
         </div>
     );
@@ -4539,7 +4540,6 @@ const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => void }) =>
                 )}
             </div>
             <p className="mt-6 text-white/20 text-xs">Conteo Ciclico Pro v4.0 · Multi-Sucursal</p>
-            {confirmModal}
         </div>
     );
 };

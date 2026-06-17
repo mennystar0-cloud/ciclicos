@@ -3355,6 +3355,14 @@ const UbicacionesTab = ({ sucursalId, folio, scans, addToast }: {
         return Object.entries(map).sort((a, b) => b[1] - a[1]);
     }, [consultaScans]);
 
+    // Número de ubicación global: posición de cada escaneo en el folio completo (orden cronológico)
+    const scanGlobalNum = useMemo(() => {
+        const sorted = [...scans].sort((a, b) => a.ts - b.ts);
+        const map: Record<string, number> = {};
+        sorted.forEach((s, i) => { map[s.id] = i + 1; });
+        return map;
+    }, [scans]);
+
     // Cargar ubicaciones guardadas
     const loadUbicaciones = async () => {
         if (!sucursalId) return;
@@ -3509,7 +3517,7 @@ const UbicacionesTab = ({ sucursalId, folio, scans, addToast }: {
                                 <table className="w-full text-xs">
                                     <thead className="bg-slate-50 dark:bg-slate-700 border-b dark:border-slate-600">
                                         <tr>
-                                            <th className="px-3 py-2 text-left text-slate-400 font-semibold w-8">#</th>
+                                            <th className="px-3 py-2 text-left text-slate-400 font-semibold w-16">Ubic.</th>
                                             <th className="px-3 py-2 text-left text-slate-500 dark:text-slate-300 font-semibold">Área</th>
                                             <th className="px-3 py-2 text-left text-slate-500 dark:text-slate-300 font-semibold">Color</th>
                                             <th className="px-3 py-2 text-left text-slate-500 dark:text-slate-300 font-semibold">Talla</th>
@@ -3518,11 +3526,9 @@ const UbicacionesTab = ({ sucursalId, folio, scans, addToast }: {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y dark:divide-slate-700">
-                                        {consultaFiltered.map((s, idx) => {
-                                            const globalIdx = consultaScans.indexOf(s);
-                                            return (
+                                        {consultaFiltered.map((s) => (
                                                 <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
-                                                    <td className="px-3 py-2.5 text-slate-400 font-mono text-center">{globalIdx + 1}</td>
+                                                    <td className="px-3 py-2.5 font-bold text-sky-600 text-center">{scanGlobalNum[s.id] ?? '—'}</td>
                                                     <td className="px-3 py-2.5">
                                                         <span className="inline-flex items-center gap-1 bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400 px-2 py-0.5 rounded-full font-semibold">
                                                             📍 {s.area}
@@ -3533,8 +3539,7 @@ const UbicacionesTab = ({ sucursalId, folio, scans, addToast }: {
                                                     <td className="px-3 py-2.5 text-slate-400 whitespace-nowrap">{new Date(s.ts).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}</td>
                                                     <td className="px-3 py-2.5 text-slate-500 dark:text-slate-400 truncate max-w-[80px]">{s.user}</td>
                                                 </tr>
-                                            );
-                                        })}
+                                        ))}
                                     </tbody>
                                 </table>
                             </div>

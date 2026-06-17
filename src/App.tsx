@@ -2336,6 +2336,19 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
             faltante: { vkey: string; color: string; talla: string; falta: number };
             piezas: number;
         }[] = [];
+        // Detecta par talla falso-positivo: misma talla pero distinto encoding
+        // Ej: teórico tiene '50' (vkey |500) y barcode escanea como '5' (vkey |050)
+        // Si la pequeña es talla jeans dama (impar 3-15) y la grande no existe en
+        // ningún mapa de tallas conocido, es error de captura en el teórico.
+        const isMislabeledTallaPair = (t1: string, t2: string): boolean => {
+            const n1 = parseFloat(t1), n2 = parseFloat(t2);
+            if (isNaN(n1) || isNaN(n2)) return false;
+            const sm = Math.min(n1, n2), lg = Math.max(n1, n2);
+            if (lg !== sm * 10) return false;
+            if (!Number.isInteger(sm) || sm < 3 || sm > 15 || sm % 2 !== 1) return false;
+            const lgCode = getSizeCode(String(lg));
+            return !ALL_ROPA_MAPS.some(m => !!m[lgCode]);
+        };
         Object.entries(byModel).forEach(([mod, variantes]) => {
             const sobrantes = variantes.filter(v => v.diff > 0);
             const faltantes = variantes.filter(v => v.diff < 0);
@@ -2344,7 +2357,7 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
                 faltantes.forEach(f => {
                     const piezas = Math.min(s.diff, Math.abs(f.diff));
                     if (piezas <= 0) return;
-                    if (s.color === f.color && s.talla !== f.talla) {
+                    if (s.color === f.color && s.talla !== f.talla && !isMislabeledTallaPair(s.talla, f.talla)) {
                         sugerencias.push({ mod, tipo: 'talla', sobrante: { vkey: s.vkey, color: s.color, talla: s.talla, exceso: s.diff }, faltante: { vkey: f.vkey, color: f.color, talla: f.talla, falta: Math.abs(f.diff) }, piezas });
                     }
                     if (s.talla === f.talla && s.color !== f.color) {

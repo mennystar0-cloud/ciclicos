@@ -1155,18 +1155,22 @@ const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucur
 };
 
 // ─── SESSIONS ADMIN TAB ───────────────────────────────────────────────────────
-const SessionsAdminTab = ({ addToast, sucursalId, folio, scans }: {
+const SessionsAdminTab = ({ addToast, sucursalId, folio, scans, colors, catalog }: {
     addToast: (m: string, t?: ToastType) => void;
     sucursalId?: string;
     folio: Folio | null;
     scans: Scan[];
+    colors: ColorMap;
+    catalog: Catalog;
 }) => {
     const [sessions, setSessions] = useState<ScanSession[]>([]);
     const [expanded, setExpanded] = useState<string | null>(null);
     const [items, setItems] = useState<{ [id: string]: SessionItem[] }>({});
     const [loadingItems, setLoadingItems] = useState<string | null>(null);
     const [syncing, setSyncing] = useState<string | null>(null);
+    const [importing, setImporting] = useState(false);
     const [now, setNow] = useState(Date.now());
+    const importRef = React.useRef<HTMLInputElement>(null);
     const { confirm: askConfirm, modal: confirmModal } = useConfirm();
 
     useEffect(() => {
@@ -1194,18 +1198,75 @@ const SessionsAdminTab = ({ addToast, sucursalId, folio, scans }: {
 
     const exportSession = async (session: ScanSession) => {
         let data = items[session.id];
-        if (!data) { data = await fbGetSessionItems(session.id) as SessionItem[]; }
-        const header = 'Código,Modelo,Color,Talla,Reconocido,Fecha\n';
-        const rows = data.map(s =>
-            `${s.code},${s.mod || ''},${s.color || ''},${s.talla || ''},${s.recognized ? 'Sí' : 'No'},${formatDate(s.ts)}`
-        ).join('\n');
-        const blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8;' });
+        if (!data) { data = await fbGetSessionItems(session.id, sucursalId) as SessionItem[]; }
+        const exportData = {
+            version: 1,
+            area: session.area,
+            operator: session.operator,
+            exportedAt: Date.now(),
+            items: data.map(item => ({ id: item.id, code: item.code, ts: item.ts })),
+        };
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `sesion-${session.area}-${session.operator}.csv`;
+        a.download = `sesion-${session.area}-${session.operator}.json`;
         a.click();
-        addToast('CSV exportado', 'success');
+        URL.revokeObjectURL(url);
+        addToast(`${data.length} escaneos exportados`, 'success');
+    };
+
+    const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        e.target.value = '';
+        setImporting(true);
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            if (!data.items || !Array.isArray(data.items)) {
+                addToast('Archivo inválido — debe ser un JSON exportado de sesión', 'error');
+                return;
+            }
+            const folios = await fbGetAllFolios(sucursalId) as Folio[];
+            const openFolio = folios.find(f => f.state === 'open');
+            if (!openFolio) { addToast('No hay inventario abierto para importar', 'warning'); return; }
+
+            const existingScans = await fbGetScans(openFolio.id) as Scan[];
+            const existingIds = new Set(existingScans.map(s => s.id));
+
+            let applied = 0, skipped = 0, unrecognized = 0;
+            for (const item of data.items) {
+                if (existingIds.has(item.id)) { skipped++; continue; }
+                const code = String(item.code || '');
+                let decoded: { mod: string; color: string; talla: string; vkey: string } | null = null;
+                const ropaDecoded = decodeRopaBarcode(code, colors);
+                if (ropaDecoded) {
+                    decoded = { mod: ropaDecoded.mod, color: ropaDecoded.color, talla: ropaDecoded.talla, vkey: ropaDecoded.vkey };
+                } else {
+                    const calzadoDecoded = tryDecodeStructuredBarcode(code, colors);
+                    if (calzadoDecoded) decoded = { mod: calzadoDecoded.mod, color: calzadoDecoded.color, talla: calzadoDecoded.talla, vkey: calzadoDecoded.vkey };
+                }
+                if (!decoded) {
+                    const cat = catalog.byBarcode[code];
+                    if (cat) decoded = { mod: cat.mod, color: cat.color, talla: cat.talla, vkey: cat.vkey };
+                }
+                if (!decoded) { unrecognized++; continue; }
+                const scan: Scan = {
+                    id: item.id, folioId: openFolio.id, code,
+                    vkey: decoded.vkey, mod: decoded.mod, color: decoded.color, talla: decoded.talla,
+                    area: data.area || 'Importado', pos: '0',
+                    user: data.operator || 'Importado', ts: item.ts || Date.now(),
+                };
+                await fbAddScan(scan);
+                applied++;
+            }
+            addToast(`✓ ${applied} importados · ${skipped} ya existían · ${unrecognized} no reconocidos`, 'success');
+        } catch (err: any) {
+            addToast(`Error al importar: ${err?.message || 'archivo inválido'}`, 'error');
+        } finally {
+            setImporting(false);
+        }
     };
 
     const deleteSession = async (sessionId: string) => {
@@ -1390,6 +1451,14 @@ const SessionsAdminTab = ({ addToast, sucursalId, folio, scans }: {
                             {activeSessions.length} activa(s)
                         </span>
                     )}
+                    <button
+                        onClick={() => importRef.current?.click()}
+                        disabled={importing}
+                        className="flex items-center gap-1 text-xs bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-400 border border-violet-200 dark:border-violet-700 px-3 py-1.5 rounded-lg font-semibold disabled:opacity-50"
+                    >
+                        <Upload size={12} /> {importing ? 'Importando…' : 'Importar JSON'}
+                    </button>
+                    <input ref={importRef} type="file" accept=".json" className="hidden" onChange={handleImportFile} />
                 </div>
             </div>
 
@@ -1428,7 +1497,7 @@ const SessionsAdminTab = ({ addToast, sucursalId, folio, scans }: {
                             {loadingItems === session.id ? '...' : expanded === session.id ? <><ChevronUp size={12} /> Ocultar</> : <><Eye size={12} /> Ver items</>}
                         </button>
                         <button onClick={() => exportSession(session)} className="flex items-center gap-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-lg font-semibold">
-                            <Download size={12} /> CSV
+                            <Download size={12} /> JSON
                         </button>
                         <button
                             onClick={() => syncSession(session)}
@@ -5117,7 +5186,7 @@ const App: React.FC = () => {
                     {activeTab === 'folio'       && role === 'admin'   && <FolioTab onJoin={(id) => { setFolioId(id); setActiveTab('reporte'); }} onCreate={(id) => setFolioId(id)} addToast={addToast} colors={colors} catalog={catalog} sucursalId={sucursalId ?? undefined} />}
                     {activeTab === 'existencias' && role === 'admin'   && <StockTab folioId={folioId} catalog={catalog} colors={colors} onUpdate={() => {}} addToast={addToast} sucursalId={sucursalId ?? undefined} />}
                     {activeTab === 'escanear'    && role === 'scanner' && <ScannerSessionTab colors={colors} catalog={catalog} folio={folio} addToast={addToast} appSession={session} sucursalId={sucursalId ?? undefined} />}
-                    {activeTab === 'sesiones'    && role === 'admin'   && <SessionsAdminTab addToast={addToast} sucursalId={sucursalId ?? undefined} folio={folio} scans={scans} />}
+                    {activeTab === 'sesiones'    && role === 'admin'   && <SessionsAdminTab addToast={addToast} sucursalId={sucursalId ?? undefined} folio={folio} scans={scans} colors={colors} catalog={catalog} />}
                     {activeTab === 'reporte'     && role === 'admin'   && <ReportTab folio={folio} scans={scans} onTabChange={handleTabChange} addToast={addToast} />}
                     {activeTab === 'consulta'    && role === 'admin'   && <QueryTab folio={folio} scans={scans} />}
                     {activeTab === 'historial'   && role === 'admin'   && <UbicacionesTab sucursalId={sucursalId ?? undefined} folio={folio} scans={scans} addToast={addToast} />}

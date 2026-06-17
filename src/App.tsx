@@ -1232,7 +1232,7 @@ const SessionsAdminTab = ({ addToast, sucursalId, folio, scans, colors, catalog 
             const openFolio = folios.find(f => f.state === 'open');
             if (!openFolio) { addToast('No hay inventario abierto para importar', 'warning'); return; }
 
-            const existingScans = await fbGetScans(openFolio.id) as Scan[];
+            const existingScans = await fbGetScans(openFolio.id, sucursalId) as Scan[];
             const existingIds = new Set(existingScans.map(s => s.id));
 
             let applied = 0, skipped = 0, unrecognized = 0;
@@ -1257,6 +1257,7 @@ const SessionsAdminTab = ({ addToast, sucursalId, folio, scans, colors, catalog 
                     vkey: decoded.vkey, mod: decoded.mod, color: decoded.color, talla: decoded.talla,
                     area: data.area || 'Importado', pos: '0',
                     user: data.operator || 'Importado', ts: item.ts || Date.now(),
+                    sucursalId: sucursalId ?? undefined,
                 };
                 await fbAddScan(scan);
                 applied++;
@@ -1291,7 +1292,7 @@ const SessionsAdminTab = ({ addToast, sucursalId, folio, scans, colors, catalog 
             if (recognized.length === 0) { addToast('Sin items reconocidos para sincronizar', 'info'); setSyncing(null); return; }
 
             // Obtener scans ya registrados en el folio para evitar duplicados
-            const existingScans = await fbGetScans(folio.id) as Scan[];
+            const existingScans = await fbGetScans(folio.id, sucursalId) as Scan[];
             const existingIds = new Set(existingScans.map(s => s.id));
 
             // Aplicar solo los que no están ya en el folio
@@ -1310,6 +1311,7 @@ const SessionsAdminTab = ({ addToast, sucursalId, folio, scans, colors, catalog 
                     pos: '0',
                     user: session.operator,
                     ts: item.ts,
+                    sucursalId: sucursalId ?? undefined,
                 };
                 await fbAddScan(scan);
                 applied++;

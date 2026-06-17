@@ -23,6 +23,9 @@ export const isSizeInRange = (tallaStr: string, category: 'calzado' | 'ropa' = '
  */
 export const getSizeCode = (t: string) => {
     const cleanT = String(t || '').toUpperCase().replace('T', '').replace(/[^0-9.]/g, '');
+    // Si ya es un sizePart de 3 dígitos con cero inicial (ej: '050', '070', '090'),
+    // usarlo directo — el teórico usa sizeparts como etiqueta de talla para jeans
+    if (/^0\d{2}$/.test(cleanT)) return cleanT;
     let n = parseFloat(cleanT);
     if (isNaN(n)) return '000';
     if (n < 70) n = n * 10;

@@ -3317,21 +3317,15 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
 };
 
 // ─── HISTORY TAB ──────────────────────────────────────────────────────────────
-const UbicacionesTab = ({ sucursalId, folio, scans, addToast }: {
+const UbicacionesTab = ({ scans }: {
     sucursalId?: string; folio: Folio | null;
     scans: Scan[]; addToast: (m: string, t?: ToastType) => void;
 }) => {
-    const [ubicaciones, setUbicaciones] = useState<any[]>([]);
-    const [loading, setLoading]         = useState(true);
-    const [search, setSearch]           = useState('');
-    const [sortBy, setSortBy]           = useState<'mod' | 'area' | 'fecha'>('mod');
-    const [filterArea, setFilterArea]   = useState<string>('');
-    const [filterCat, setFilterCat]     = useState<'all' | 'calzado' | 'ropa'>('all');
     const [consultaMod, setConsultaMod] = useState('');
     const [consultaArea, setConsultaArea] = useState('');
 
-    // Escaneos del modelo buscado, ordenados cronológicamente
     const normMod = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+
     const consultaScans = useMemo(() => {
         const q = normMod(consultaMod.trim());
         if (!q) return [];
@@ -3340,23 +3334,17 @@ const UbicacionesTab = ({ sucursalId, folio, scans, addToast }: {
             .sort((a, b) => a.ts - b.ts);
     }, [scans, consultaMod]);
 
-    const consultaAreas = useMemo(() =>
-        [...new Set(consultaScans.map(s => s.area))].sort(),
-    [consultaScans]);
-
     const consultaFiltered = useMemo(() => {
         if (!consultaArea) return consultaScans;
         return consultaScans.filter(s => s.area === consultaArea);
     }, [consultaScans, consultaArea]);
 
-    // Resumen por área
     const consultaPorArea = useMemo(() => {
         const map: Record<string, number> = {};
         consultaScans.forEach(s => { map[s.area] = (map[s.area] ?? 0) + 1; });
         return Object.entries(map).sort((a, b) => b[1] - a[1]);
     }, [consultaScans]);
 
-    // Número de ubicación global: posición de cada escaneo en el folio completo (orden cronológico)
     const scanGlobalNum = useMemo(() => {
         const sorted = [...scans].sort((a, b) => a.ts - b.ts);
         const map: Record<string, number> = {};
@@ -3364,100 +3352,14 @@ const UbicacionesTab = ({ sucursalId, folio, scans, addToast }: {
         return map;
     }, [scans]);
 
-    // Cargar ubicaciones guardadas
-    const loadUbicaciones = async () => {
-        if (!sucursalId) return;
-        setLoading(true);
-        const data = await fbGetUbicaciones(sucursalId);
-        setUbicaciones(data);
-        setLoading(false);
-    };
-
-    useEffect(() => { loadUbicaciones(); }, [sucursalId]);
-
-    // Calcular y guardar ubicaciones al cerrar inventario
-    const calcularYGuardar = async () => {
-        if (!folio || !sucursalId || scans.length === 0) {
-            addToast('No hay escaneos para calcular ubicaciones', 'warning');
-            return;
-        }
-        // Por cada SKU, tomar el último escaneo (mayor ts)
-        const map: Record<string, any> = {};
-        scans.forEach(s => {
-            if (!map[s.vkey] || s.ts > map[s.vkey].ts) {
-                map[s.vkey] = {
-                    vkey: s.vkey,
-                    mod: s.mod,
-                    color: s.color,
-                    talla: s.talla,
-                    area: s.area,
-                    cantidad: 0,
-                    folioId: folio.id,
-                    folioName: folio.name,
-                    updatedAt: s.ts,
-                };
-            }
-        });
-        // Calcular cantidad por SKU desde existenciasMap del folio
-        Object.keys(map).forEach(vkey => {
-            map[vkey].cantidad = folio.existenciasMap?.[vkey] ?? 0;
-        });
-        const nuevas = Object.values(map);
-        await fbSaveUbicaciones(sucursalId, nuevas);
-        setUbicaciones(nuevas);
-        addToast(`${nuevas.length} ubicaciones actualizadas`, 'success');
-    };
-
-    const areas = useMemo(() =>
-        [...new Set(ubicaciones.map(u => u.area as string))].sort(),
-    [ubicaciones]);
-
-    const filtered = useMemo(() => {
-        const q = search.trim().toLowerCase();
-        const rows = ubicaciones.filter(u => {
-            if (q && !u.mod?.toLowerCase().includes(q) && !u.color?.toLowerCase().includes(q) &&
-                !u.talla?.toLowerCase().includes(q) && !u.area?.toLowerCase().includes(q)) return false;
-            if (filterArea && u.area !== filterArea) return false;
-            if (filterCat !== 'all') {
-                const isRopa = (u.vkey as string)?.startsWith('R|');
-                if (filterCat === 'ropa'    && !isRopa) return false;
-                if (filterCat === 'calzado' &&  isRopa) return false;
-            }
-            return true;
-        });
-        return [...rows].sort((a, b) => {
-            if (sortBy === 'mod')   return a.mod.localeCompare(b.mod);
-            if (sortBy === 'area')  return a.area.localeCompare(b.area);
-            return b.updatedAt - a.updatedAt;
-        });
-    }, [ubicaciones, search, sortBy, filterArea, filterCat]);
-
-    // Agrupar por área para vista de mapa
-    const porArea = useMemo(() => {
-        const map: Record<string, any[]> = {};
-        filtered.forEach(u => {
-            if (!map[u.area]) map[u.area] = [];
-            map[u.area].push(u);
-        });
-        return map;
-    }, [filtered]);
-
     return (
         <div className="space-y-4">
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-lg font-bold text-slate-800 dark:text-white">Ubicaciones</h2>
-                    <p className="text-xs text-slate-400 dark:text-slate-500">
-                        {ubicaciones.length > 0
-                            ? `${ubicaciones.length} SKUs · Actualizado: ${ubicaciones[0] ? new Date(Math.max(...ubicaciones.map(u => u.updatedAt))).toLocaleDateString('es-MX') : '-'}`
-                            : 'Sin datos aún'}
-                    </p>
+                    <h2 className="text-lg font-bold text-slate-800 dark:text-white">Ubicaciones por modelo</h2>
+                    <p className="text-xs text-slate-400 dark:text-slate-500">{scans.length} escaneos en folio activo</p>
                 </div>
-                <button onClick={calcularYGuardar}
-                    className="flex items-center gap-2 bg-sky-500 hover:bg-sky-600 text-white px-3 py-2 rounded-xl text-xs font-bold active:scale-95">
-                    <RefreshCw size={13} /> Actualizar
-                </button>
             </div>
 
             {/* ── Consulta por modelo ── */}
@@ -3552,138 +3454,6 @@ const UbicacionesTab = ({ sucursalId, folio, scans, addToast }: {
                     )}
                 </div>
             </div>
-
-            {/* Info */}
-            {ubicaciones.length === 0 && !loading && (
-                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-2xl p-4 text-center space-y-2">
-                    <p className="text-2xl">📍</p>
-                    <p className="font-semibold text-amber-800 dark:text-amber-300 text-sm">Sin ubicaciones guardadas</p>
-                    <p className="text-xs text-amber-600 dark:text-amber-400">
-                        Abre un inventario, escanea los artículos y toca <strong>Actualizar</strong> para registrar las ubicaciones.
-                    </p>
-                </div>
-            )}
-
-            {ubicaciones.length > 0 && (
-                <>
-                {/* Buscador y filtros */}
-                <div className="space-y-2">
-                    <div className="relative">
-                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                        <input
-                            className="w-full pl-8 pr-8 py-2.5 text-sm bg-white dark:bg-slate-800 border dark:border-slate-600 rounded-xl focus:outline-none focus:border-sky-400 dark:text-white placeholder-slate-400"
-                            placeholder="Buscar modelo, color, talla o área..."
-                            value={search}
-                            onChange={e => setSearch(e.target.value)}
-                        />
-                        {search && (
-                            <button onClick={() => setSearch('')}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">×</button>
-                        )}
-                    </div>
-
-                    {/* Filtro por área */}
-                    {areas.length > 1 && (
-                        <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-                            <button onClick={() => setFilterArea('')}
-                                className={`px-3 py-1 rounded-full text-xs font-medium flex-shrink-0 transition-colors ${filterArea === '' ? 'bg-slate-700 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
-                                Todas las áreas
-                            </button>
-                            {areas.map(a => (
-                                <button key={a} onClick={() => setFilterArea(filterArea === a ? '' : a)}
-                                    className={`px-3 py-1 rounded-full text-xs font-medium flex-shrink-0 transition-colors ${filterArea === a ? 'bg-sky-500 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
-                                    📍 {a}
-                                </button>
-                            ))}
-                        </div>
-                    )}
-
-                    {/* Filtro por categoría */}
-                    {ubicaciones.some(u => (u.vkey as string)?.startsWith('R|')) && (
-                        <div className="flex gap-1.5">
-                            {(['all','calzado','ropa'] as const).map(c => (
-                                <button key={c} onClick={() => setFilterCat(c)}
-                                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${filterCat === c ? 'bg-purple-500 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
-                                    {c === 'all' ? 'Todo' : c === 'calzado' ? '👟 Calzado' : '👕 Ropa'}
-                                </button>
-                            ))}
-                        </div>
-                    )}
-
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs text-slate-400 flex-shrink-0">Ordenar:</span>
-                        {(['mod','area','fecha'] as const).map(s => (
-                            <button key={s} onClick={() => setSortBy(s)}
-                                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${sortBy === s ? 'bg-sky-500 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
-                                {s === 'mod' ? 'Modelo' : s === 'area' ? 'Área' : 'Reciente'}
-                            </button>
-                        ))}
-                        <span className="text-xs text-slate-400 ml-auto">
-                            {filtered.length}{filtered.length !== ubicaciones.length ? `/${ubicaciones.length}` : ''} SKU(s)
-                        </span>
-                    </div>
-                </div>
-
-                {/* Lista */}
-                {sortBy === 'area' ? (
-                    /* Vista agrupada por área */
-                    <div className="space-y-3">
-                        {Object.entries(porArea).map(([area, items]) => (
-                            <div key={area} className="bg-white dark:bg-slate-800 rounded-2xl border dark:border-slate-700 overflow-hidden">
-                                <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-700 flex items-center justify-between">
-                                    <p className="font-bold text-slate-700 dark:text-white text-sm">📍 {area}</p>
-                                    <span className="text-xs text-slate-400">{items.length} SKU(s)</span>
-                                </div>
-                                <div className="divide-y dark:divide-slate-700">
-                                    {items.map(u => (
-                                        <div key={u.vkey} className="px-4 py-3 flex items-center justify-between">
-                                            <div>
-                                                <p className="text-sm font-semibold text-slate-800 dark:text-white">{u.mod} · {u.color} · {formatTallaConCategoria(u.talla, u.vkey)}</p>
-                                                <p className="text-xs text-slate-400">{new Date(u.updatedAt).toLocaleDateString('es-MX')} · {u.folioName}</p>
-                                            </div>
-                                            <div className="text-right">
-                                                <p className="text-lg font-black text-sky-600">{u.cantidad}</p>
-                                                <p className="text-[10px] text-slate-400">piezas</p>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                ) : (
-                    /* Vista lista */
-                    <div className="space-y-2">
-                        {filtered.map(u => (
-                            <div key={u.vkey} className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 px-4 py-3 flex items-center gap-3">
-                                <div className="flex-1 min-w-0">
-                                    <p className="font-bold text-slate-800 dark:text-white text-sm truncate">{u.mod} · {u.color} · {formatTallaConCategoria(u.talla, u.vkey)}</p>
-                                    <div className="flex items-center gap-2 mt-0.5">
-                                        <span className="text-[11px] bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400 px-2 py-0.5 rounded-full font-medium">
-                                            📍 {u.area}
-                                        </span>
-                                        <span className="text-[11px] text-slate-400">{u.folioName}</span>
-                                    </div>
-                                </div>
-                                <div className="text-right flex-shrink-0">
-                                    <p className="text-xl font-black text-sky-600">{u.cantidad}</p>
-                                    <p className="text-[10px] text-slate-400">piezas</p>
-                                </div>
-                            </div>
-                        ))}
-                        {filtered.length === 0 && search && (
-                            <p className="text-center text-slate-400 py-8 text-sm">Sin resultados para "{search}"</p>
-                        )}
-                    </div>
-                )}
-                </>
-            )}
-
-            {loading && (
-                <div className="text-center py-10 text-slate-400">
-                    <p>Cargando ubicaciones...</p>
-                </div>
-            )}
         </div>
     );
 };

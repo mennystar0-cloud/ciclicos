@@ -1643,13 +1643,6 @@ const FolioTab = ({ onJoin, onCreate, addToast, colors, catalog, sucursalId }: {
                     <div>
                         <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Almacén *</label>
                         <input className="w-full border dark:border-slate-600 rounded-lg p-2 text-sm mt-1 dark:bg-slate-700 dark:text-white" placeholder="Ej: Caballero, Dama, Bodega..." value={almacen} onChange={e => setAlmacen(e.target.value)} autoFocus />
-                        {savedWarehouses.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-1">
-                                {savedWarehouses.map(w => (
-                                    <button key={w} onClick={() => setAlmacen(w)} className="text-xs bg-slate-100 dark:bg-slate-700 dark:text-slate-300 px-2 py-0.5 rounded-full text-slate-600">{w}</button>
-                                ))}
-                            </div>
-                        )}
                     </div>
                     <div>
                         <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Temporada</label>
@@ -3382,6 +3375,19 @@ const UbicacionesTab = ({ scans }: {
                         )}
                     </div>
 
+                    {!consultaMod.trim() && scans.length === 0 && (
+                        <div className="text-center py-6 text-slate-400">
+                            <MapPin size={28} className="mx-auto mb-2 opacity-30" />
+                            <p className="text-sm font-medium">No hay escaneos en el folio activo</p>
+                            <p className="text-xs mt-1">Abre un folio y escanea artículos para poder consultarlos aquí</p>
+                        </div>
+                    )}
+                    {!consultaMod.trim() && scans.length > 0 && (
+                        <div className="text-center py-5 text-slate-400">
+                            <p className="text-sm">Escribe un número de modelo para ver en qué posición y área se escaneó cada pieza</p>
+                            <p className="text-xs mt-1 text-slate-300">{scans.length} escaneos disponibles</p>
+                        </div>
+                    )}
                     {consultaMod.trim() && consultaScans.length === 0 && (
                         <p className="text-center text-sm text-slate-400 py-4">Sin escaneos para "{consultaMod.trim()}"</p>
                     )}
@@ -5085,7 +5091,7 @@ const App: React.FC = () => {
         { id: 'sesiones',    label: 'Sesiones',     icon: <Users />,     roles: ['admin'], badge: activeScannerCount },
         { id: 'reporte',     label: 'Reporte',      icon: <BarChart3 />, roles: ['admin'] },
         { id: 'consulta',    label: 'Consulta',     icon: <Search />,    roles: ['admin'] },
-        { id: 'historial',   label: 'Ubicaciones',  icon: <MapPin />,    roles: ['admin'] },
+        { id: 'historial',   label: 'Ubic. Modelo', icon: <MapPin />,    roles: ['admin'] },
         { id: 'colores',     label: 'Colores',      icon: <Palette />,   roles: ['admin'] },
         { id: 'database',    label: 'DB',           icon: <Database />,  roles: ['admin'] },
         { id: 'info',        label: 'Info',         icon: <BookOpen />,  roles: ['admin'] },

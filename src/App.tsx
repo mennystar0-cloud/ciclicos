@@ -59,8 +59,7 @@ const DAMA_SIZE_MAP: Record<string, string> = {
     '112': 'GDE', // alias previo
     '120': 'G',   // GDE, GEX → normalizado a G
     '128': 'XCH',
-    '113': 'EXG', // alias previo
-    '130': 'EXG',
+    '130': 'EXG', // Verificado: EXG=130 en barcodes reales
     '140': 'XXG',
     '150': '3EG',
     '990': 'UNI', // Unitalla ropa (codigo interno, no aparece en barcode)
@@ -453,6 +452,14 @@ const DEFAULT_COLORS: ColorMap = {
     'MAUVE': '545', 'MORADO': '072', 'TURQUESA': '316', 'DORADO': '133',
     'LAVANDA': '335', 'CIRUELA': '411', 'MANDARINA': '343', 'TERRACOTA': '445',
     'AMBAR': '919', 'GUINDA': '323', 'MARSALA': '391', 'COBRE': '263',
+    // Colores compuestos y adicionales verificados con barcodes reales
+    'NEGRO/MULTICOLOR': '087', 'AZUL MULTICOLOR': '127', 'MARINO MULTICOLOR': '145',
+    'NEGRO MULTICOLOR': '437', 'ARENA MULTICOLOR': '292', 'IVORY MULTICOLOR': '492',
+    'NEGRO/AZUL': '303', 'NEGRO/IVORY': '878', 'NEGRO/ROJO': '115',
+    'BLANCO/NEGRO': '039', 'BLANCO/ROJO': '043', 'AZUL/BLANCO': '142',
+    'NARANJA/NEGRO': '141', 'CAMEL/NEGRO': '163', 'MARINO/BLANCO': '933',
+    'AZUL ACERO': '496', 'AZUL MEZCLILLA': '551', 'MEZCLILLA GRIS': '768',
+    'PALO DE ROSA': '506', 'CHAMPAGNE': '732', 'UVA': '288', 'GRIS JASPE': '964',
 };
 
 // ─── CONFIRM HOOK ────────────────────────────────────────────────────────────

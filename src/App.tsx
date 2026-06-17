@@ -3243,7 +3243,7 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
                     </div>
                 ) : (
                     <div className="bg-white rounded-xl border shadow-sm overflow-x-auto">
-                        <table className="w-full text-xs min-w-[600px]">
+                        <table className="w-full text-sm min-w-[600px]">
                             <thead className="bg-slate-50 border-b">
                                 <tr>
                                     <th className="px-3 py-2.5 text-left text-slate-400 font-semibold w-8">#</th>
@@ -3262,7 +3262,7 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
                                         <td className="px-3 py-2.5 text-slate-400 text-center">{i + 1}</td>
                                         <td className="px-3 py-2.5 font-bold text-slate-800">{a.mod}</td>
                                         <td className="px-3 py-2.5">
-                                            <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${a.tipo === 'talla' ? 'bg-sky-100 text-sky-700' : 'bg-purple-100 text-purple-700'}`}>
+                                            <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${a.tipo === 'talla' ? 'bg-sky-100 text-sky-700' : 'bg-purple-100 text-purple-700'}`}>
                                                 {a.tipo === 'talla' ? 'Talla' : 'Color'}
                                             </span>
                                         </td>
@@ -3296,7 +3296,7 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
             </div>
             )}
             {/* Rows list */}
-            {vista === 'reporte' && (
+            {vista === 'reporte' && filter !== 'ajustes' && (
             <div className="space-y-1 no-print">
                 {filtered.map(r => (
                     <div key={r.vkey} className="bg-white rounded-xl border overflow-hidden shadow-sm">

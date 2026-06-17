@@ -2280,6 +2280,9 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
     const [printMode, setPrintMode] = useState<'completo' | 'simplificado'>('completo');
     const [vista, setVista] = useState<'reporte' | 'ajustes'>('reporte');
     const [showPrintModal, setShowPrintModal] = useState(false);
+    const [ajusteSearch, setAjusteSearch] = useState('');
+    const [ajusteTipoFil, setAjusteTipoFil] = useState<'all' | 'talla' | 'color'>('all');
+    const [ajusteChecked, setAjusteChecked] = useState<Set<number>>(new Set());
 
     const report = useMemo(() => {
         if (!folio) return { rows: [], totalItems: 0, scannedItems: 0, missingItems: 0, sobranteItems: 0 };
@@ -2359,6 +2362,13 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
         });
         return sugerencias.sort((a, b) => a.tipo === b.tipo ? b.piezas - a.piezas : a.tipo === 'talla' ? -1 : 1);
     }, [report.rows, folio]);
+
+    const ajustesFiltrados = useMemo(() => {
+        let list = ajustesSugeridos;
+        if (ajusteTipoFil !== 'all') list = list.filter(a => a.tipo === ajusteTipoFil);
+        if (ajusteSearch.trim()) list = list.filter(a => a.mod.toLowerCase().includes(ajusteSearch.trim().toLowerCase()));
+        return list;
+    }, [ajustesSugeridos, ajusteTipoFil, ajusteSearch]);
 
     const coveragePct = report.totalItems > 0 ? (report.scannedItems / report.totalItems) * 100 : 0;
 
@@ -2510,37 +2520,30 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
 <title>Ajustes Posibles — ${folio?.name}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; font-size: 11px; color: #1e293b; padding: 24px; }
-  .header { border-bottom: 3px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: flex-start; }
-  .logo { font-size: 18px; font-weight: 900; color: #0f172a; }
-  .sub { font-size: 10px; color: #64748b; margin-top: 4px; }
-  .badge { display: inline-block; background: #f59e0b; color: white; font-size: 9px; font-weight: bold; padding: 2px 8px; border-radius: 10px; margin-left: 8px; vertical-align: middle; }
-  .section-title { font-size: 13px; font-weight: bold; margin: 16px 0 8px; padding-left: 8px; border-left: 4px solid #f59e0b; color: #0f172a; }
-  .ajuste-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 10px; page-break-inside: avoid; }
-  .ajuste-card .mod { font-size: 13px; font-weight: bold; color: #0f172a; margin-bottom: 6px; }
-  .ajuste-card .tipo { display: inline-block; font-size: 9px; font-weight: bold; padding: 2px 6px; border-radius: 10px; margin-left: 6px; }
-  .tipo-talla { background: #dbeafe; color: #1d4ed8; }
-  .tipo-color { background: #f3e8ff; color: #7e22ce; }
-  .ajuste-row { display: flex; gap: 16px; align-items: center; margin-top: 6px; }
-  .ajuste-box { flex: 1; border-radius: 6px; padding: 8px 12px; }
-  .sobrante-box { background: #f0fdf4; border: 1px solid #bbf7d0; }
-  .faltante-box { background: #fef2f2; border: 1px solid #fecaca; }
-  .ajuste-box .label { font-size: 9px; font-weight: bold; color: #64748b; text-transform: uppercase; }
-  .ajuste-box .value { font-size: 12px; font-weight: bold; margin-top: 2px; }
-  .sobrante-box .value { color: #16a34a; }
-  .faltante-box .value { color: #dc2626; }
-  .arrow { font-size: 18px; color: #94a3b8; flex-shrink: 0; }
-  .piezas { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px 10px; font-size: 10px; text-align: center; flex-shrink: 0; }
-  .piezas strong { font-size: 13px; display: block; }
-  .obs { margin-top: 8px; border-top: 1px dashed #e2e8f0; padding-top: 8px; }
-  .obs-label { font-size: 9px; color: #94a3b8; text-transform: uppercase; font-weight: bold; margin-bottom: 4px; }
-  .obs-line { border-bottom: 1px solid #e2e8f0; margin-bottom: 6px; height: 14px; }
-  .footer { margin-top: 24px; font-size: 9px; color: #94a3b8; text-align: center; border-top: 1px solid #f1f5f9; padding-top: 8px; }
-  .resumen { display: flex; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
-  .res-box { border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 14px; text-align: center; }
-  .res-box .val { font-size: 16px; font-weight: bold; color: #f59e0b; }
-  .res-box .lbl { font-size: 9px; color: #64748b; }
-  @page { size: A4 portrait; margin: 1.5cm; }
+  body { font-family: Arial, sans-serif; font-size: 10px; color: #1e293b; padding: 20px; }
+  .header { border-bottom: 3px solid #0f172a; padding-bottom: 10px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: flex-start; }
+  .logo { font-size: 17px; font-weight: 900; color: #0f172a; }
+  .sub { font-size: 9px; color: #64748b; margin-top: 3px; }
+  .badge { display: inline-block; background: #f59e0b; color: white; font-size: 8px; font-weight: bold; padding: 2px 8px; border-radius: 10px; margin-left: 8px; vertical-align: middle; }
+  .resumen { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .res-box { border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 14px; text-align: center; }
+  .res-box .val { font-size: 15px; font-weight: bold; color: #f59e0b; }
+  .res-box .lbl { font-size: 8px; color: #64748b; }
+  table { width: 100%; border-collapse: collapse; }
+  thead { background: #f8fafc; }
+  th { text-align: left; padding: 5px 7px; border: 1px solid #e2e8f0; font-size: 8px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .03em; }
+  td { padding: 5px 7px; border: 1px solid #e2e8f0; vertical-align: middle; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  .tipo-talla { background: #dbeafe; color: #1d4ed8; font-size: 8px; font-weight: bold; padding: 1px 5px; border-radius: 8px; white-space: nowrap; }
+  .tipo-color { background: #f3e8ff; color: #7e22ce; font-size: 8px; font-weight: bold; padding: 1px 5px; border-radius: 8px; white-space: nowrap; }
+  .sob { color: #16a34a; font-weight: 600; }
+  .fal { color: #dc2626; font-weight: 600; }
+  .arrow { text-align: center; color: #94a3b8; font-weight: bold; font-size: 12px; }
+  .pzas { text-align: center; font-weight: bold; color: #d97706; }
+  .num { text-align: center; color: #94a3b8; font-size: 9px; }
+  .check { text-align: center; font-size: 14px; color: #cbd5e1; }
+  .footer { margin-top: 14px; font-size: 8px; color: #94a3b8; text-align: center; border-top: 1px solid #f1f5f9; padding-top: 6px; }
+  @page { size: A4 portrait; margin: 1cm 1.5cm; }
 </style>
 </head>
 <body>
@@ -2550,50 +2553,43 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
     <div class="sub">${folio?.name} &nbsp;·&nbsp; ${folio?.almacen} &nbsp;·&nbsp; ${folio?.temporada || ''}</div>
     <div class="sub">${new Date().toLocaleString('es-MX', { dateStyle: 'long', timeStyle: 'short' })}</div>
   </div>
-  <div style="text-align:right">
-    <div class="sub">v4.0 · Multi-Sucursal</div>
-  </div>
+  <div style="text-align:right"><div class="sub">v4.0 · Multi-Sucursal</div></div>
 </div>
 
 <div class="resumen">
   <div class="res-box"><div class="val">${ajustesSugeridos.length}</div><div class="lbl">Ajustes posibles</div></div>
   <div class="res-box"><div class="val">${ajustesSugeridos.filter(a => a.tipo === 'talla').length}</div><div class="lbl">Por talla</div></div>
   <div class="res-box"><div class="val">${ajustesSugeridos.filter(a => a.tipo === 'color').length}</div><div class="lbl">Por color</div></div>
-  <div class="res-box"><div class="val">${ajustesSugeridos.reduce((a, s) => a + s.piezas, 0)}</div><div class="lbl">Piezas a mover</div></div>
+  <div class="res-box"><div class="val">${ajustesSugeridos.reduce((s, a) => s + a.piezas, 0)}</div><div class="lbl">Piezas a mover</div></div>
 </div>
 
-<div class="section-title">Ajustes sugeridos</div>
-${ajustesSugeridos.map(a => `
-<div class="ajuste-card">
-  <div class="mod">
-    ${a.mod}
-    <span class="tipo ${a.tipo === 'talla' ? 'tipo-talla' : 'tipo-color'}">
-      ${a.tipo === 'talla' ? 'Diferencia de talla' : 'Diferencia de color'}
-    </span>
-  </div>
-  <div class="ajuste-row">
-    <div class="ajuste-box sobrante-box">
-      <div class="label">Sobrante</div>
-      <div class="value">${a.sobrante.color} T${formatTallaFromVkey(a.sobrante.talla, a.sobrante.vkey)}</div>
-      <div style="font-size:10px;color:#16a34a">+${a.sobrante.exceso} pieza(s)</div>
-    </div>
-    <div class="arrow">→</div>
-    <div class="ajuste-box faltante-box">
-      <div class="label">Faltante</div>
-      <div class="value">${a.faltante.color} T${formatTallaFromVkey(a.faltante.talla, a.faltante.vkey)}</div>
-      <div style="font-size:10px;color:#dc2626">${a.faltante.falta} pieza(s)</div>
-    </div>
-    <div class="piezas">
-      <strong>${a.piezas}</strong>
-      mover
-    </div>
-  </div>
-  <div class="obs">
-    <div class="obs-label">Observaciones</div>
-    <div class="obs-line"></div>
-    <div class="obs-line"></div>
-  </div>
-</div>`).join('')}
+<table>
+  <thead>
+    <tr>
+      <th style="width:24px">#</th>
+      <th style="width:72px">Modelo</th>
+      <th style="width:48px">Tipo</th>
+      <th>Sobrante (color · talla · cant)</th>
+      <th style="width:14px"></th>
+      <th>Faltante (color · talla · cant)</th>
+      <th style="width:36px">Piezas</th>
+      <th style="width:44px">Aplicado</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${ajustesSugeridos.map((a, i) => `
+    <tr>
+      <td class="num">${i + 1}</td>
+      <td style="font-weight:bold">${a.mod}</td>
+      <td><span class="${a.tipo === 'talla' ? 'tipo-talla' : 'tipo-color'}">${a.tipo === 'talla' ? 'Talla' : 'Color'}</span></td>
+      <td class="sob">${a.sobrante.color} · T${formatTallaFromVkey(a.sobrante.talla, a.sobrante.vkey)} · +${a.sobrante.exceso}</td>
+      <td class="arrow">→</td>
+      <td class="fal">${a.faltante.color} · T${formatTallaFromVkey(a.faltante.talla, a.faltante.vkey)} · -${a.faltante.falta}</td>
+      <td class="pzas">${a.piezas}</td>
+      <td class="check">☐</td>
+    </tr>`).join('')}
+  </tbody>
+</table>
 
 <div class="footer">
   Conteo Cíclico Pro v4.0 · Generado el ${new Date().toLocaleDateString('es-MX')} · ${ajustesSugeridos.length} ajuste(s) sugerido(s)
@@ -3188,44 +3184,109 @@ ${ajustesSugeridos.map(a => `
             )}
 
 
-            {/* Vista ajustes posibles en pantalla */}
+            {/* Vista ajustes posibles en pantalla — listado de tabla */}
             {filter === 'ajustes' && (
             <div className="space-y-3 no-print">
-                {ajustesSugeridos.length === 0 ? (
-                    <div className="text-center py-10 text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700">
-                        <p className="font-medium">Sin ajustes posibles</p>
-                        <p className="text-xs mt-1">No hay sobrantes y faltantes compensables en el mismo modelo</p>
-                    </div>
-                ) : ajustesSugeridos.map((a, i) => (
-                    <div key={i} className="bg-white dark:bg-slate-800 rounded-2xl border dark:border-slate-700 p-4 space-y-3">
-                        <div className="flex items-center justify-between">
-                            <p className="font-bold text-slate-800 dark:text-white text-sm">{a.mod}</p>
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${a.tipo === 'talla' ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'}`}>
-                                {a.tipo === 'talla' ? 'Dif. talla' : 'Dif. color'}
-                            </span>
+                {/* Resumen */}
+                <div className="grid grid-cols-4 gap-2">
+                    {[
+                        { val: ajustesSugeridos.length,                                         lbl: 'Total ajustes',  cls: 'text-amber-500' },
+                        { val: ajustesSugeridos.filter(a => a.tipo === 'talla').length,         lbl: 'Por talla',      cls: 'text-sky-500' },
+                        { val: ajustesSugeridos.filter(a => a.tipo === 'color').length,         lbl: 'Por color',      cls: 'text-purple-500' },
+                        { val: ajustesSugeridos.reduce((s, a) => s + a.piezas, 0),             lbl: 'Piezas a mover', cls: 'text-amber-500' },
+                    ].map(({ val, lbl, cls }) => (
+                        <div key={lbl} className="bg-white border rounded-xl p-3 text-center shadow-sm">
+                            <p className={`text-xl font-bold ${cls}`}>{val}</p>
+                            <p className="text-[10px] text-slate-400 uppercase font-semibold mt-0.5">{lbl}</p>
                         </div>
-                        <div className="grid grid-cols-3 gap-2 items-center">
-                            <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-xl p-3 text-center">
-                                <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase">Sobrante</p>
-                                <p className="font-bold text-emerald-700 dark:text-emerald-300 text-sm mt-1">{a.sobrante.color}</p>
-                                <p className="text-xs text-emerald-600 dark:text-emerald-400">{formatTallaFromVkey(a.sobrante.talla, a.sobrante.vkey)}</p>
-                                <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">+{a.sobrante.exceso}</p>
-                            </div>
-                            <div className="flex flex-col items-center gap-1">
-                                <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
-                                    <RefreshCw size={14} className="text-amber-600 dark:text-amber-400" />
-                                </div>
-                                <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">{a.piezas} pzas</span>
-                            </div>
-                            <div className="bg-red-50 dark:bg-red-900/20 rounded-xl p-3 text-center">
-                                <p className="text-[10px] text-red-600 dark:text-red-400 font-bold uppercase">Faltante</p>
-                                <p className="font-bold text-red-700 dark:text-red-300 text-sm mt-1">{a.faltante.color}</p>
-                                <p className="text-xs text-red-600 dark:text-red-400">{formatTallaFromVkey(a.faltante.talla, a.faltante.vkey)}</p>
-                                <p className="text-xs font-bold text-red-600 dark:text-red-400">-{a.faltante.falta}</p>
-                            </div>
-                        </div>
+                    ))}
+                </div>
+
+                {/* Barra de búsqueda y filtros */}
+                <div className="flex gap-2 items-center">
+                    <input
+                        type="text"
+                        value={ajusteSearch}
+                        onChange={e => setAjusteSearch(e.target.value)}
+                        placeholder="Buscar modelo…"
+                        className="flex-1 text-sm border rounded-lg px-3 py-2 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    />
+                    {(['all', 'talla', 'color'] as const).map(t => (
+                        <button key={t} onClick={() => setAjusteTipoFil(t)}
+                            className={`px-3 py-2 text-xs font-bold rounded-lg border transition-colors ${
+                                ajusteTipoFil === t
+                                    ? t === 'talla' ? 'bg-sky-100 border-sky-400 text-sky-700'
+                                    : t === 'color' ? 'bg-purple-100 border-purple-400 text-purple-700'
+                                    : 'bg-amber-100 border-amber-400 text-amber-700'
+                                    : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                            }`}>
+                            {t === 'all' ? 'Todos' : t === 'talla' ? 'Talla' : 'Color'}
+                        </button>
+                    ))}
+                    <button onClick={printAjustes}
+                        className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg hover:bg-slate-700 transition-colors whitespace-nowrap">
+                        <Printer size={13} /> Imprimir
+                    </button>
+                </div>
+
+                {/* Tabla */}
+                {ajustesFiltrados.length === 0 ? (
+                    <div className="text-center py-10 text-slate-400 bg-white rounded-xl border">
+                        <p className="font-medium">{ajustesSugeridos.length === 0 ? 'Sin ajustes posibles' : 'Sin resultados'}</p>
+                        <p className="text-xs mt-1">{ajustesSugeridos.length === 0 ? 'No hay sobrantes y faltantes compensables en el mismo modelo' : 'Intenta con otro filtro o búsqueda'}</p>
                     </div>
-                ))}
+                ) : (
+                    <div className="bg-white rounded-xl border shadow-sm overflow-x-auto">
+                        <table className="w-full text-xs min-w-[600px]">
+                            <thead className="bg-slate-50 border-b">
+                                <tr>
+                                    <th className="px-3 py-2.5 text-left text-slate-400 font-semibold w-8">#</th>
+                                    <th className="px-3 py-2.5 text-left text-slate-500 font-semibold">Modelo</th>
+                                    <th className="px-3 py-2.5 text-left text-slate-500 font-semibold">Tipo</th>
+                                    <th className="px-3 py-2.5 text-left text-slate-500 font-semibold">Sobrante</th>
+                                    <th className="px-1 py-2.5 text-center text-slate-300 w-6"></th>
+                                    <th className="px-3 py-2.5 text-left text-slate-500 font-semibold">Faltante</th>
+                                    <th className="px-3 py-2.5 text-center text-slate-500 font-semibold w-14">Piezas</th>
+                                    <th className="px-3 py-2.5 text-center text-slate-400 font-semibold w-10">✓</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {ajustesFiltrados.map((a, i) => (
+                                    <tr key={i} className={`transition-colors ${ajusteChecked.has(i) ? 'bg-slate-50 opacity-50' : 'hover:bg-amber-50/40'}`}>
+                                        <td className="px-3 py-2.5 text-slate-400 text-center">{i + 1}</td>
+                                        <td className="px-3 py-2.5 font-bold text-slate-800">{a.mod}</td>
+                                        <td className="px-3 py-2.5">
+                                            <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${a.tipo === 'talla' ? 'bg-sky-100 text-sky-700' : 'bg-purple-100 text-purple-700'}`}>
+                                                {a.tipo === 'talla' ? 'Talla' : 'Color'}
+                                            </span>
+                                        </td>
+                                        <td className="px-3 py-2.5">
+                                            <span className="text-emerald-700 font-semibold">{a.sobrante.color}</span>
+                                            <span className="text-slate-300 mx-1">·</span>
+                                            <span className="text-emerald-600">T{formatTallaFromVkey(a.sobrante.talla, a.sobrante.vkey)}</span>
+                                            <span className="text-emerald-600 font-bold ml-1">+{a.sobrante.exceso}</span>
+                                        </td>
+                                        <td className="px-1 py-2.5 text-slate-300 text-center font-bold">→</td>
+                                        <td className="px-3 py-2.5">
+                                            <span className="text-red-700 font-semibold">{a.faltante.color}</span>
+                                            <span className="text-slate-300 mx-1">·</span>
+                                            <span className="text-red-600">T{formatTallaFromVkey(a.faltante.talla, a.faltante.vkey)}</span>
+                                            <span className="text-red-600 font-bold ml-1">-{a.faltante.falta}</span>
+                                        </td>
+                                        <td className="px-3 py-2.5 text-center font-bold text-amber-600">{a.piezas}</td>
+                                        <td className="px-3 py-2.5 text-center">
+                                            <input type="checkbox" checked={ajusteChecked.has(i)} onChange={e => {
+                                                const n = new Set(ajusteChecked);
+                                                if (e.target.checked) n.add(i); else n.delete(i);
+                                                setAjusteChecked(n);
+                                            }} className="w-4 h-4 accent-emerald-500 cursor-pointer" />
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
             </div>
             )}
             {/* Rows list */}

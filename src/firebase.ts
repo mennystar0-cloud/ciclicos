@@ -2,7 +2,7 @@ import { initializeApp } from 'firebase/app';
 import {
     getFirestore, collection, doc, setDoc, getDoc, getDocs,
     onSnapshot, deleteDoc, query, where, writeBatch,
-    updateDoc, increment, serverTimestamp
+    updateDoc, increment, serverTimestamp, FieldPath
 } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -172,11 +172,11 @@ export const fbAddScan = async (scan: any) => {
 
     await Promise.all([
         setDoc(doc(scansCol, scan.id), { ...scan, createdAt: serverTimestamp() }),
-        updateDoc(folioPath, {
-            [`existenciasMap.${scan.vkey}`]: increment(1),
-            [`areaCounters.${scan.area}`]: increment(1),
-            updatedAt: serverTimestamp(),
-        }),
+        updateDoc(folioPath,
+            new FieldPath('existenciasMap', scan.vkey), increment(1),
+            new FieldPath('areaCounters', scan.area), increment(1),
+            'updatedAt', serverTimestamp(),
+        ),
     ]);
     return scan;
 };
@@ -191,11 +191,11 @@ export const fbDeleteScan = async (scanId: string, folioId: string, vkey: string
 
     await Promise.all([
         deleteDoc(doc(scansCol, scanId)),
-        updateDoc(folioPath, {
-            [`existenciasMap.${vkey}`]: increment(-1),
-            ...(area ? { [`areaCounters.${area}`]: increment(-1) } : {}),
-            updatedAt: serverTimestamp(),
-        }),
+        updateDoc(folioPath,
+            new FieldPath('existenciasMap', vkey), increment(-1),
+            ...(area ? [new FieldPath('areaCounters', area), increment(-1)] : []),
+            'updatedAt', serverTimestamp(),
+        ),
     ]);
 };
 

@@ -3331,11 +3331,12 @@ const UbicacionesTab = ({ sucursalId, folio, scans, addToast }: {
     const [consultaArea, setConsultaArea] = useState('');
 
     // Escaneos del modelo buscado, ordenados cronológicamente
+    const normMod = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
     const consultaScans = useMemo(() => {
-        const q = consultaMod.trim().toLowerCase();
+        const q = normMod(consultaMod.trim());
         if (!q) return [];
         return [...scans]
-            .filter(s => s.mod?.toLowerCase().includes(q))
+            .filter(s => normMod(s.mod ?? '').includes(q))
             .sort((a, b) => a.ts - b.ts);
     }, [scans, consultaMod]);
 
@@ -3486,7 +3487,7 @@ const UbicacionesTab = ({ sucursalId, folio, scans, addToast }: {
                     {consultaScans.length > 0 && (
                         <>
                             {/* Resumen */}
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid grid-cols-3 gap-2">
                                 <div className="bg-sky-50 dark:bg-sky-900/20 rounded-xl p-3 text-center">
                                     <p className="text-2xl font-black text-sky-600">{consultaScans.length}</p>
                                     <p className="text-[10px] text-sky-500 uppercase font-semibold">escaneos</p>
@@ -3494,6 +3495,10 @@ const UbicacionesTab = ({ sucursalId, folio, scans, addToast }: {
                                 <div className="bg-slate-50 dark:bg-slate-700 rounded-xl p-3 text-center">
                                     <p className="text-2xl font-black text-slate-700 dark:text-white">{consultaAreas.length}</p>
                                     <p className="text-[10px] text-slate-400 uppercase font-semibold">{consultaAreas.length === 1 ? 'área' : 'áreas'}</p>
+                                </div>
+                                <div className="bg-slate-50 dark:bg-slate-700 rounded-xl p-3 text-center">
+                                    <p className="text-2xl font-black text-slate-500 dark:text-slate-400">{scans.length}</p>
+                                    <p className="text-[10px] text-slate-400 uppercase font-semibold">en folio</p>
                                 </div>
                             </div>
 
@@ -3517,10 +3522,10 @@ const UbicacionesTab = ({ sucursalId, folio, scans, addToast }: {
                                 <table className="w-full text-xs">
                                     <thead className="bg-slate-50 dark:bg-slate-700 border-b dark:border-slate-600">
                                         <tr>
-                                            <th className="px-3 py-2 text-left text-slate-400 font-semibold w-16">Ubic.</th>
+                                            <th className="px-3 py-2 text-left text-slate-400 font-semibold w-14">Ubic.</th>
+                                            <th className="px-3 py-2 text-left text-slate-500 dark:text-slate-300 font-semibold">Modelo</th>
                                             <th className="px-3 py-2 text-left text-slate-500 dark:text-slate-300 font-semibold">Área</th>
-                                            <th className="px-3 py-2 text-left text-slate-500 dark:text-slate-300 font-semibold">Color</th>
-                                            <th className="px-3 py-2 text-left text-slate-500 dark:text-slate-300 font-semibold">Talla</th>
+                                            <th className="px-3 py-2 text-left text-slate-500 dark:text-slate-300 font-semibold">Color · Talla</th>
                                             <th className="px-3 py-2 text-left text-slate-500 dark:text-slate-300 font-semibold">Hora</th>
                                             <th className="px-3 py-2 text-left text-slate-500 dark:text-slate-300 font-semibold">Operador</th>
                                         </tr>
@@ -3528,14 +3533,14 @@ const UbicacionesTab = ({ sucursalId, folio, scans, addToast }: {
                                     <tbody className="divide-y dark:divide-slate-700">
                                         {consultaFiltered.map((s) => (
                                                 <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
-                                                    <td className="px-3 py-2.5 font-bold text-sky-600 text-center">{scanGlobalNum[s.id] ?? '—'}</td>
+                                                    <td className="px-3 py-2.5 font-black text-sky-600 text-center text-sm">{scanGlobalNum[s.id] ?? '—'}</td>
+                                                    <td className="px-3 py-2.5 font-bold text-slate-800 dark:text-white">{s.mod}</td>
                                                     <td className="px-3 py-2.5">
-                                                        <span className="inline-flex items-center gap-1 bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400 px-2 py-0.5 rounded-full font-semibold">
+                                                        <span className="inline-flex items-center gap-1 bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400 px-2 py-0.5 rounded-full font-semibold text-xs">
                                                             📍 {s.area}
                                                         </span>
                                                     </td>
-                                                    <td className="px-3 py-2.5 font-semibold text-slate-700 dark:text-slate-200">{s.color}</td>
-                                                    <td className="px-3 py-2.5 text-slate-600 dark:text-slate-300">{formatTallaConCategoria(s.talla, s.vkey)}</td>
+                                                    <td className="px-3 py-2.5 text-slate-600 dark:text-slate-300">{s.color} · {formatTallaConCategoria(s.talla, s.vkey)}</td>
                                                     <td className="px-3 py-2.5 text-slate-400 whitespace-nowrap">{new Date(s.ts).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}</td>
                                                     <td className="px-3 py-2.5 text-slate-500 dark:text-slate-400 truncate max-w-[80px]">{s.user}</td>
                                                 </tr>

@@ -3401,8 +3401,8 @@ const UbicacionesTab = ({ scans }: {
                                     <p className="text-[10px] text-sky-500 uppercase font-semibold">escaneos</p>
                                 </div>
                                 <div className="bg-slate-50 dark:bg-slate-700 rounded-xl p-3 text-center">
-                                    <p className="text-2xl font-black text-slate-700 dark:text-white">{consultaAreas.length}</p>
-                                    <p className="text-[10px] text-slate-400 uppercase font-semibold">{consultaAreas.length === 1 ? 'área' : 'áreas'}</p>
+                                    <p className="text-2xl font-black text-slate-700 dark:text-white">{consultaPorArea.length}</p>
+                                    <p className="text-[10px] text-slate-400 uppercase font-semibold">{consultaPorArea.length === 1 ? 'área' : 'áreas'}</p>
                                 </div>
                                 <div className="bg-slate-50 dark:bg-slate-700 rounded-xl p-3 text-center">
                                     <p className="text-2xl font-black text-slate-500 dark:text-slate-400">{scans.length}</p>

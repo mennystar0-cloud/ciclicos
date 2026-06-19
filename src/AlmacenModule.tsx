@@ -35,6 +35,103 @@ const saveLayout = (layout: AlmacenLayout) =>
 const removeLayout = (id: string) =>
     deleteDoc(doc(db, 'almacen_layouts', id));
 
+// ─── Layout predefinido (extraído de los planos del almacén) ──────────────
+const r = (numero: number, linea: string): RackAlmacen => ({ numero, linea });
+
+const LAYOUT_PREDEFINIDO: Omit<AlmacenLayout, 'id' | 'creadoEn' | 'actualizadoEn' | 'sucursalesAsignadas'> = {
+    nombre: 'Layout Calzado Juárez',
+    descripcion: 'Layout completo del almacén — extraído de los planos',
+    secciones: [
+        {
+            id: 'pre-sec1',
+            nombre: 'Sección 1 — Caballero / Six y Dúo',
+            racks: [
+                r(1,'CABALLERO/URBAN'), r(2,'CABALLERO'), r(3,'CABALLERO'),
+                r(4,'CABALLERO'), r(5,'CABALLERO'), r(6,'CABALLERO'),
+                r(7,'CABALLERO'), r(8,'CABALLERO'),
+                r(9,'SIX Y DUO'), r(10,'SIX Y DUO'), r(11,'SIX Y DUO'),
+                r(12,'SIX Y DUO'), r(13,'SIX Y DUO'), r(14,'SIX Y DUO'),
+                r(15,'SIX Y DUO'),
+            ],
+        },
+        {
+            id: 'pre-sec2',
+            nombre: 'Sección 1 — Línea',
+            racks: [
+                r(16,'CONFORT'), r(17,'CONFORT'), r(18,'CONFORT'), r(19,'CONFORT'),
+                r(20,'CONFORT'), r(21,'CONFORT'), r(22,'CONFORT'), r(23,'CONFORT'),
+                r(24,'CONFORT LINEA/OFERTA'), r(25,'CONFORT'),
+                r(26,'GLAMOUR/CONFORT'), r(27,'CONFORT'),
+                r(28,'GLAMOUR'), r(29,'GLAMOUR'),
+                r(30,'GLAMOUR/B2S'), r(31,'GLAMOUR/B2S'),
+                r(32,'B2S'), r(33,'B2S'),
+                r(34,'URBAN'), r(35,'URBAN'),
+                r(36,''),
+            ],
+        },
+        {
+            id: 'pre-sec3',
+            nombre: 'Planta Baja — Niños / Bota',
+            racks: [
+                r(37,'NIÑOS Y B2S LINEA'), r(38,'NIÑOS Y B2S LINEA'),
+                r(39,'NIÑOS Y B2S LINEA'), r(40,'NIÑOS Y B2S LINEA'),
+                r(41,'NIÑOS Y B2S LINEA'), r(42,'NIÑOS Y B2S LINEA'),
+                r(43,'NIÑOS Y B2S LINEA'), r(44,'NIÑOS LINEA/OFERTA'),
+                r(45,'NIÑOS Y B2S LINEA'), r(46,'NIÑOS OFERTA'),
+                r(47,'NIÑOS OFERTA'), r(48,'LIBRE'),
+                r(49,'EXCEDENTE PASO/SALDO'),
+                r(50,'BOTA'), r(51,'BOTA'), r(52,'BOTA'),
+                r(53,'BOTA'), r(54,'BOTA'), r(55,'BOTA'),
+            ],
+        },
+        {
+            id: 'pre-sec4',
+            nombre: 'Planta Baja — Dama',
+            racks: [
+                r(56,'DAMA LINEA'), r(57,'DAMA LINEA'), r(58,'DAMA LINEA'),
+                r(59,'DAMA LINEA'), r(60,'DAMA LINEA'), r(61,'DAMA LINEA'),
+                r(62,'DAMA LINEA'), r(63,'DAMA LINEA'), r(64,'DAMA LINEA'),
+                r(65,'DAMA LINEA'),
+                r(66,'DAMA'), r(67,'DAMA'), r(68,'DAMA'), r(69,'DAMA'), r(70,'DAMA'),
+                r(71,'DAMA OFERTA'), r(72,'DAMA OFERTA'), r(73,'DAMA OFERTA'),
+                r(74,'DAMA OFERTA'), r(75,'DAMA OFERTA'),
+            ],
+        },
+        {
+            id: 'pre-sec5',
+            nombre: 'Planta Baja — Derecha',
+            racks: [
+                r(77,'URBAN'), r(78,'URBAN'), r(79,'URBAN'), r(80,'URBAN'),
+                r(81,'URBAN'), r(82,'URBAN'), r(83,'URBAN'), r(84,'URBAN'),
+                r(85,'URBAN'), r(86,'URBAN'),
+                r(87,'SPORT'), r(88,'EXC URBAN'), r(89,'EXC URBAN'),
+                r(90,'INFRAMUNDO'),
+                r(91,'PANTUNFLA HUARACHE OFERTA'),
+                r(92,'PANTUNFLA HUARACHE LINEA'),
+            ],
+        },
+        {
+            id: 'pre-sec6',
+            nombre: 'Tercer Piso',
+            racks: [
+                r(93,''), r(94,''),
+            ],
+        },
+        {
+            id: 'pre-sec7',
+            nombre: 'Touch / Pedidos',
+            racks: [
+                r(95,''),
+                r(103,'PERIMETRO 3'), r(104,'PERIMETRO 2'), r(105,'PERIMETRO 1'),
+                r(106,'BASE 1'), r(107,'BASE 2'),
+                r(108,'ATEMPORAL 1'), r(109,'ATEMPORAL 2'),
+                r(110,'MESA 1'), r(111,'MESA 2'), r(112,'MESA 3'), r(113,'MESA 4'),
+                r(114,'ZAPATERA 1'), r(115,'ZAPATERA 2'),
+            ],
+        },
+    ],
+};
+
 // ─── Parse rack range string ("1-8, 10, 12-15") ───────────────────────────
 function parseRange(input: string): number[] {
     const nums = new Set<number>();
@@ -244,6 +341,21 @@ export const AlmacenModule = ({ sucursalId, isSuperAdmin, sucursales = [] }: Pro
         if (selectedId === id) { setSelectedId(null); setAdminVista('list'); }
     };
 
+    const handleImportPredefinido = async () => {
+        if (!confirm('¿Importar el "Layout Calzado Juárez" con las asignaciones del plano? Se creará como un nuevo layout.')) return;
+        setSavingLayout(true);
+        const layout: AlmacenLayout = {
+            ...LAYOUT_PREDEFINIDO,
+            id: crypto.randomUUID(),
+            sucursalesAsignadas: [],
+            creadoEn: Date.now(),
+            actualizadoEn: Date.now(),
+        };
+        await saveLayout(layout);
+        openLayout(layout.id);
+        setSavingLayout(false);
+    };
+
     const handleAddSection = async () => {
         if (!selectedLayout || !newSecNombre.trim()) return;
         setSavingSec(true);
@@ -406,10 +518,17 @@ export const AlmacenModule = ({ sucursalId, isSuperAdmin, sucursales = [] }: Pro
                     <h2 className="font-bold text-slate-800 dark:text-white text-base">Layouts de Almacén</h2>
                     <p className="text-xs text-slate-400 mt-0.5">{layouts.length} layout{layouts.length !== 1 ? 's' : ''}</p>
                 </div>
-                <button onClick={() => setShowNewLayout(true)}
-                    className="px-4 py-2 bg-violet-600 text-white text-sm font-bold rounded-xl hover:bg-violet-700 active:scale-95 transition-all">
-                    + Nuevo
-                </button>
+                <div className="flex gap-2">
+                    <button onClick={handleImportPredefinido} disabled={savingLayout}
+                        className="px-3 py-2 bg-amber-500 text-white text-xs font-bold rounded-xl hover:bg-amber-600 active:scale-95 transition-all disabled:opacity-50"
+                        title="Importa el Layout Calzado Juárez con todas las secciones y líneas del plano">
+                        📥 Importar plano
+                    </button>
+                    <button onClick={() => setShowNewLayout(true)}
+                        className="px-4 py-2 bg-violet-600 text-white text-sm font-bold rounded-xl hover:bg-violet-700 active:scale-95 transition-all">
+                        + Nuevo
+                    </button>
+                </div>
             </div>
 
             {layouts.length === 0 && (

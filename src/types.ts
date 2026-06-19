@@ -1,6 +1,30 @@
 
 export type Role = 'admin' | 'scanner';
-export type Tab = 'folio' | 'existencias' | 'escanear' | 'reporte' | 'consulta' | 'historial' | 'colores' | 'database' | 'info';
+export type Tab = 'folio' | 'existencias' | 'escanear' | 'reporte' | 'consulta' | 'historial' | 'colores' | 'database' | 'info' | 'almacen';
+
+export interface RackAlmacen {
+    numero: number;
+    linea: string;
+    capacidad?: number;
+    piezasActuales?: number;
+    notas?: string;
+}
+
+export interface SeccionAlmacen {
+    id: string;
+    nombre: string;
+    racks: RackAlmacen[];
+}
+
+export interface AlmacenLayout {
+    id: string;
+    nombre: string;
+    descripcion?: string;
+    secciones: SeccionAlmacen[];
+    sucursalesAsignadas: string[];
+    creadoEn: number;
+    actualizadoEn: number;
+}
 
 export type StockMap = { [vkey: string]: number };
 

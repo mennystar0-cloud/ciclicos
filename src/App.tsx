@@ -12,6 +12,7 @@ import {
     fbSaveOperador, fbDeleteOperador, fbLoginOperador, hashPassword
 } from './firebase.ts';
 import type { Role, Tab, Folio, Catalog, ColorMap, Scan, StockMap } from './types.ts';
+import { AlmacenModule } from './AlmacenModule';
 import {
     tryDecodeStructuredBarcode, formatDate, keyOf, splitKey, getSizeCode,
     canonical, cleanModel, detectCategoryBySize, generateBarcode
@@ -397,6 +398,7 @@ const ShieldCheck = (p: any) => <Icon {...p} d={['M12 22s8-4 8-10V5l-8-3-8 3v7c0
 const ClipboardList = (p: any) => <Icon {...p} d={['M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2','M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2','M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2','M9 12h6','M9 16h4']} />;
 const Lock = (p: any) => <Icon {...p} d={['M19 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2z','M17 11V7a5 5 0 0 0-10 0v4']} />;
 const Unlock = (p: any) => <Icon {...p} d={['M19 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2z','M17 11V7a5 5 0 0 0-9.9-1']} />;
+const Warehouse = (p: any) => <Icon {...p} d={['M22 8.35V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.35A2 2 0 0 1 3.26 6.5l8-3.21a2 2 0 0 1 1.48 0l8 3.21A2 2 0 0 1 22 8.35z','M6 18h12','M6 14h12','M15 22v-4a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v4']} />;
 const Sparkles = (p: any) => <Icon {...p} d={['M12 3l1.88 5.76 5.62.82-4.08 3.95.97 5.6L12 16.5l-5.39 2.63.97-5.6L3.5 9.58l5.62-.82z']} />;
 const Users = (p: any) => <Icon {...p} d={['M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2','M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z','M23 21v-2a4 4 0 0 0-3-3.87','M16 3.13a4 4 0 0 1 0 7.75']} />;
 const PlayCircle = (p: any) => <Icon {...p} d={['M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z','M10 8l6 4-6 4V8z']} />;
@@ -3957,7 +3959,7 @@ const SuperAdminPanel = ({ onLogout }: { onLogout: () => void }) => {
     const [usuario, setUsuario]       = React.useState('');
     const [password, setPassword]     = React.useState('');
     const [showSettings, setShowSettings] = React.useState(false);
-    const [vista, setVista]           = React.useState<'dashboard'|'sucursales'|'reporte'>('dashboard');
+    const [vista, setVista]           = React.useState<'dashboard'|'sucursales'|'reporte'|'almacen'>('dashboard');
     const [viewMode, setViewMode]       = React.useState<'cards'|'list'>('cards');
     const [dashSessions, setDashSessions] = React.useState<Record<string, any[]>>({});
     const [dashNow, setDashNow]         = React.useState(Date.now());
@@ -4109,6 +4111,10 @@ const SuperAdminPanel = ({ onLogout }: { onLogout: () => void }) => {
                 <button onClick={() => setVista('reporte')}
                     className={`px-3 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${vista === 'reporte' ? 'border-sky-400 text-sky-400' : 'border-transparent text-slate-400 hover:text-white'}`}>
                     📊 Reportes
+                </button>
+                <button onClick={() => setVista('almacen')}
+                    className={`px-3 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${vista === 'almacen' ? 'border-violet-400 text-violet-400' : 'border-transparent text-slate-400 hover:text-white'}`}>
+                    🏭 Almacén
                 </button>
             </div>
 
@@ -4438,6 +4444,14 @@ const SuperAdminPanel = ({ onLogout }: { onLogout: () => void }) => {
                     </div>
                 )}
             </div>
+            )}
+
+            {/* ── VISTA ALMACÉN ── */}
+            {vista === 'almacen' && (
+                <AlmacenModule
+                    isSuperAdmin={true}
+                    sucursales={sucursales.map((s: any) => ({ id: s.id, nombre: s.nombre }))}
+                />
             )}
 
             {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
@@ -5108,6 +5122,7 @@ const App: React.FC = () => {
         { id: 'colores',     label: 'Colores',      icon: <Palette />,   roles: ['admin'] },
         { id: 'database',    label: 'DB',           icon: <Database />,  roles: ['admin'] },
         { id: 'info',        label: 'Info',         icon: <BookOpen />,  roles: ['admin'] },
+        { id: 'almacen',     label: 'Almacén',      icon: <Warehouse />, roles: ['admin'] },
     ];
     const visibleTabs = role === 'scanner' ? [] : tabs.filter(t => t.roles.includes(role!));
 
@@ -5174,6 +5189,7 @@ const App: React.FC = () => {
                     {activeTab === 'colores'     && role === 'admin'   && <DictTab colors={colors} onUpdate={handleUpdateColorMap} addToast={addToast} />}
                     {activeTab === 'database'    && role === 'admin'   && <DatabaseTab addToast={addToast} />}
                     {activeTab === 'info'        && role === 'admin'   && <InfoTab />}
+                    {activeTab === 'almacen'     && role === 'admin'   && <AlmacenModule sucursalId={sucursalId ?? undefined} isSuperAdmin={false} />}
                 </ErrorBoundary>
             </main>
 

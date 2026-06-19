@@ -42,21 +42,11 @@ const LAYOUT_PREDEFINIDO: Omit<AlmacenLayout, 'id' | 'creadoEn' | 'actualizadoEn
     nombre: 'Layout Calzado Juárez',
     descripcion: 'Layout completo del almacén — extraído de los planos',
     secciones: [
+        // ── Plano: columna 1 (izquierda) ────────────────────────────────────
         {
-            id: 'pre-sec1',
-            nombre: 'Sección 1 — Caballero / Six y Dúo',
-            racks: [
-                r(1,'CABALLERO/URBAN'), r(2,'CABALLERO'), r(3,'CABALLERO'),
-                r(4,'CABALLERO'), r(5,'CABALLERO'), r(6,'CABALLERO'),
-                r(7,'CABALLERO'), r(8,'CABALLERO'),
-                r(9,'SIX Y DUO'), r(10,'SIX Y DUO'), r(11,'SIX Y DUO'),
-                r(12,'SIX Y DUO'), r(13,'SIX Y DUO'), r(14,'SIX Y DUO'),
-                r(15,'SIX Y DUO'),
-            ],
-        },
-        {
-            id: 'pre-sec2',
+            id: 'pre-linea',
             nombre: 'Sección 1 — Línea',
+            planCol: 1, cols: 2,
             racks: [
                 r(16,'CONFORT'), r(17,'CONFORT'), r(18,'CONFORT'), r(19,'CONFORT'),
                 r(20,'CONFORT'), r(21,'CONFORT'), r(22,'CONFORT'), r(23,'CONFORT'),
@@ -70,8 +60,9 @@ const LAYOUT_PREDEFINIDO: Omit<AlmacenLayout, 'id' | 'creadoEn' | 'actualizadoEn
             ],
         },
         {
-            id: 'pre-sec3',
+            id: 'pre-ninos',
             nombre: 'Planta Baja — Niños / Bota',
+            planCol: 1, cols: 2,
             racks: [
                 r(37,'NIÑOS Y B2S LINEA'), r(38,'NIÑOS Y B2S LINEA'),
                 r(39,'NIÑOS Y B2S LINEA'), r(40,'NIÑOS Y B2S LINEA'),
@@ -84,9 +75,21 @@ const LAYOUT_PREDEFINIDO: Omit<AlmacenLayout, 'id' | 'creadoEn' | 'actualizadoEn
                 r(53,'BOTA'), r(54,'BOTA'), r(55,'BOTA'),
             ],
         },
+        // ── Plano: columna 2 (centro) ────────────────────────────────────────
         {
-            id: 'pre-sec4',
+            id: 'pre-six',
+            nombre: 'Six y Dúo',
+            planCol: 2, cols: 1,
+            racks: [
+                r(9,'SIX Y DUO'), r(10,'SIX Y DUO'), r(11,'SIX Y DUO'),
+                r(12,'SIX Y DUO'), r(13,'SIX Y DUO'), r(14,'SIX Y DUO'),
+                r(15,'SIX Y DUO'),
+            ],
+        },
+        {
+            id: 'pre-dama',
             nombre: 'Planta Baja — Dama',
+            planCol: 2, cols: 5,
             racks: [
                 r(56,'DAMA LINEA'), r(57,'DAMA LINEA'), r(58,'DAMA LINEA'),
                 r(59,'DAMA LINEA'), r(60,'DAMA LINEA'), r(61,'DAMA LINEA'),
@@ -98,8 +101,26 @@ const LAYOUT_PREDEFINIDO: Omit<AlmacenLayout, 'id' | 'creadoEn' | 'actualizadoEn
             ],
         },
         {
-            id: 'pre-sec5',
+            id: 'pre-3p',
+            nombre: 'Tercer Piso',
+            planCol: 2, cols: 2,
+            racks: [ r(93,''), r(94,'') ],
+        },
+        // ── Plano: columna 3 (derecha) ────────────────────────────────────────
+        {
+            id: 'pre-cab',
+            nombre: 'Caballero',
+            planCol: 3, cols: 1,
+            racks: [
+                r(1,'CABALLERO/URBAN'), r(2,'CABALLERO'), r(3,'CABALLERO'),
+                r(4,'CABALLERO'), r(5,'CABALLERO'), r(6,'CABALLERO'),
+                r(7,'CABALLERO'), r(8,'CABALLERO'),
+            ],
+        },
+        {
+            id: 'pre-der',
             nombre: 'Planta Baja — Derecha',
+            planCol: 3, cols: 2,
             racks: [
                 r(77,'URBAN'), r(78,'URBAN'), r(79,'URBAN'), r(80,'URBAN'),
                 r(81,'URBAN'), r(82,'URBAN'), r(83,'URBAN'), r(84,'URBAN'),
@@ -111,15 +132,9 @@ const LAYOUT_PREDEFINIDO: Omit<AlmacenLayout, 'id' | 'creadoEn' | 'actualizadoEn
             ],
         },
         {
-            id: 'pre-sec6',
-            nombre: 'Tercer Piso',
-            racks: [
-                r(93,''), r(94,''),
-            ],
-        },
-        {
-            id: 'pre-sec7',
+            id: 'pre-touch',
             nombre: 'Touch / Pedidos',
+            planCol: 3, cols: 4,
             racks: [
                 r(95,''),
                 r(103,'PERIMETRO 3'), r(104,'PERIMETRO 2'), r(105,'PERIMETRO 1'),
@@ -259,6 +274,7 @@ export const AlmacenModule = ({ sucursalId, isSuperAdmin, sucursales = [] }: Pro
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [selectedSecId, setSelectedSecId] = useState<string | null>(null);
     const [selectedRackNum, setSelectedRackNum] = useState<number | null>(null);
+    const [vistaPlano, setVistaPlano] = useState(false);
 
     // New layout form
     const [showNewLayout, setShowNewLayout] = useState(false);
@@ -418,7 +434,48 @@ export const AlmacenModule = ({ sucursalId, isSuperAdmin, sucursales = [] }: Pro
         await saveLayout({ ...layout, sucursalesAsignadas: next, actualizadoEn: Date.now() });
     };
 
-    // ── Shared: section tabs + rack grid ──────────────────────────────────────
+    const handleRackClick = useCallback((secId: string, rackNum: number) => {
+        const isSel = selectedSecId === secId && selectedRackNum === rackNum;
+        setSelectedSecId(secId);
+        setSelectedRackNum(isSel ? null : rackNum);
+    }, [selectedSecId, selectedRackNum]);
+
+    // ── Shared: render a single section's rack grid ───────────────────────────
+
+    const renderSeccionRacks = (sec: SeccionAlmacen, compact = false) => {
+        if (sec.racks.length === 0) return <p className="text-xs text-slate-400 py-2 text-center">Sin racks</p>;
+        const colCount = sec.cols || (compact ? 2 : 4);
+        const lines = Array.from(new Set(sec.racks.map(r => r.linea).filter(Boolean)));
+        return (
+            <>
+                {!compact && lines.length > 0 && (
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 mb-3">
+                        {lines.map(linea => {
+                            const c = lineColor(linea);
+                            return (
+                                <div key={linea} className="flex items-center gap-1">
+                                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: c.tx }} />
+                                    <span className="text-[9px] text-slate-500 dark:text-slate-400">{linea}</span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${colCount}, minmax(0, 1fr))`, gap: compact ? '3px' : '6px' }}>
+                    {sec.racks.map(rack => (
+                        <RackCard
+                            key={rack.numero}
+                            rack={rack}
+                            selected={selectedSecId === sec.id && selectedRackNum === rack.numero}
+                            onClick={() => handleRackClick(sec.id, rack.numero)}
+                        />
+                    ))}
+                </div>
+            </>
+        );
+    };
+
+    // ── Vista Secciones (tabs) ────────────────────────────────────────────────
 
     const renderSectionView = (editable: boolean) => {
         if (!selectedLayout) return null;
@@ -438,11 +495,9 @@ export const AlmacenModule = ({ sucursalId, isSuperAdmin, sucursales = [] }: Pro
                                 {sec.nombre}
                                 <span className="text-[9px] opacity-50">({sec.racks.length})</span>
                                 {editable && (
-                                    <span
-                                        role="button"
+                                    <span role="button"
                                         onClick={e => { e.stopPropagation(); handleDeleteSection(sec.id); }}
-                                        className="opacity-0 group-hover:opacity-50 hover:!opacity-100 text-red-400 cursor-pointer leading-none"
-                                    >✕</span>
+                                        className="opacity-0 group-hover:opacity-50 hover:!opacity-100 text-red-400 cursor-pointer leading-none">✕</span>
                                 )}
                             </button>
                         ))}
@@ -454,48 +509,65 @@ export const AlmacenModule = ({ sucursalId, isSuperAdmin, sucursales = [] }: Pro
                         )}
                     </div>
                 </div>
-
-                {/* Rack grid */}
                 <div className="p-4">
                     {!selectedSection ? (
                         <div className="text-center py-10 text-slate-400">
-                            <p className="text-sm">
-                                {selectedLayout.secciones.length === 0
-                                    ? 'Sin secciones. Agrega una con el botón "+ Sección".'
-                                    : 'Selecciona una sección.'}
-                            </p>
+                            <p className="text-sm">{selectedLayout.secciones.length === 0 ? 'Sin secciones.' : 'Selecciona una sección.'}</p>
                         </div>
-                    ) : selectedSection.racks.length === 0 ? (
-                        <div className="text-center py-10 text-slate-400">
-                            <p className="text-sm">Sección sin racks.</p>
-                        </div>
-                    ) : (
-                        <>
-                            {/* Legend strip */}
-                            <div className="flex flex-wrap gap-x-3 gap-y-1 mb-3">
-                                {Array.from(new Set(selectedSection.racks.map(r => r.linea).filter(Boolean))).map(linea => {
-                                    const c = lineColor(linea);
-                                    return (
-                                        <div key={linea} className="flex items-center gap-1">
-                                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: c.tx }} />
-                                            <span className="text-[9px] text-slate-500 dark:text-slate-400">{linea}</span>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                            <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
-                                {selectedSection.racks.map(rack => (
-                                    <RackCard
-                                        key={rack.numero}
-                                        rack={rack}
-                                        selected={selectedRackNum === rack.numero}
-                                        onClick={() => setSelectedRackNum(rack.numero === selectedRackNum ? null : rack.numero)}
-                                    />
-                                ))}
-                            </div>
-                        </>
+                    ) : renderSeccionRacks(selectedSection, false)}
+                </div>
+            </div>
+        );
+    };
+
+    // ── Vista Plano (todas las secciones en layout espacial) ──────────────────
+
+    const renderFloorPlan = (editable: boolean) => {
+        if (!selectedLayout) return null;
+        const secciones = selectedLayout.secciones;
+        const col1 = secciones.filter(s => s.planCol === 1);
+        const col2 = secciones.filter(s => s.planCol === 2);
+        const col3 = secciones.filter(s => s.planCol === 3);
+        const sinCol = secciones.filter(s => !s.planCol);
+        const hasPlan = col1.length > 0 || col2.length > 0 || col3.length > 0;
+
+        const SecCard = ({ sec }: { sec: SeccionAlmacen }) => (
+            <div className={`bg-white dark:bg-slate-800 rounded-xl border-2 overflow-hidden transition-all ${
+                selectedSecId === sec.id ? 'border-violet-400' : 'border-slate-200 dark:border-slate-700'
+            }`}>
+                <div className="px-2.5 py-1.5 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 truncate">{sec.nombre}</span>
+                    <span className="text-[9px] text-slate-400 flex-shrink-0">{sec.racks.length}</span>
+                    {editable && (
+                        <span role="button"
+                            onClick={() => handleDeleteSection(sec.id)}
+                            className="text-[9px] text-red-400 flex-shrink-0 cursor-pointer hover:opacity-100 opacity-40">✕</span>
                     )}
                 </div>
+                <div className="p-1.5">{renderSeccionRacks(sec, true)}</div>
+            </div>
+        );
+
+        if (!hasPlan) {
+            return (
+                <div className="space-y-3">
+                    {secciones.map(sec => <SecCard key={sec.id} sec={sec} />)}
+                </div>
+            );
+        }
+
+        return (
+            <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-2 items-start">
+                    <div className="space-y-2">{col1.map(sec => <SecCard key={sec.id} sec={sec} />)}</div>
+                    <div className="space-y-2">{col2.map(sec => <SecCard key={sec.id} sec={sec} />)}</div>
+                    <div className="space-y-2">{col3.map(sec => <SecCard key={sec.id} sec={sec} />)}</div>
+                </div>
+                {sinCol.length > 0 && (
+                    <div className="grid grid-cols-2 gap-2">
+                        {sinCol.map(sec => <SecCard key={sec.id} sec={sec} />)}
+                    </div>
+                )}
             </div>
         );
     };
@@ -649,8 +721,28 @@ export const AlmacenModule = ({ sucursalId, isSuperAdmin, sucursales = [] }: Pro
                 )}
             </div>
 
-            {/* Section tabs + rack grid */}
-            {renderSectionView(true)}
+            {/* View toggle + section add */}
+            <div className="flex items-center justify-between gap-2">
+                <div className="flex rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden text-xs font-bold">
+                    <button onClick={() => setVistaPlano(false)}
+                        className={`px-3 py-1.5 transition-colors ${!vistaPlano ? 'bg-violet-600 text-white' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'}`}>
+                        Secciones
+                    </button>
+                    <button onClick={() => setVistaPlano(true)}
+                        className={`px-3 py-1.5 transition-colors ${vistaPlano ? 'bg-violet-600 text-white' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'}`}>
+                        🗺 Plano
+                    </button>
+                </div>
+                {vistaPlano && (
+                    <button onClick={() => setShowNewSec(true)}
+                        className="px-3 py-1.5 text-xs font-bold text-violet-600 border border-violet-200 rounded-xl hover:bg-violet-50">
+                        + Sección
+                    </button>
+                )}
+            </div>
+
+            {/* Section tabs + rack grid / floor plan */}
+            {vistaPlano ? renderFloorPlan(true) : renderSectionView(true)}
 
             {/* Rack edit panel */}
             {selectedRack && (
@@ -742,7 +834,19 @@ export const AlmacenModule = ({ sucursalId, isSuperAdmin, sucursales = [] }: Pro
                         </div>
                     </div>
 
-                    {renderSectionView(false)}
+                    {/* View toggle */}
+                    <div className="flex rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden text-xs font-bold w-fit">
+                        <button onClick={() => setVistaPlano(false)}
+                            className={`px-3 py-1.5 transition-colors ${!vistaPlano ? 'bg-violet-600 text-white' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'}`}>
+                            Secciones
+                        </button>
+                        <button onClick={() => setVistaPlano(true)}
+                            className={`px-3 py-1.5 transition-colors ${vistaPlano ? 'bg-violet-600 text-white' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'}`}>
+                            🗺 Plano
+                        </button>
+                    </div>
+
+                    {vistaPlano ? renderFloorPlan(false) : renderSectionView(false)}
 
                     {selectedRack && (
                         <RackPanel

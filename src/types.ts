@@ -14,6 +14,8 @@ export interface SeccionAlmacen {
     id: string;
     nombre: string;
     racks: RackAlmacen[];
+    cols?: number;    // columnas del grid de racks en la visualización
+    planCol?: number; // columna en la vista de plano (1=izq, 2=centro, 3=der)
 }
 
 export interface AlmacenLayout {

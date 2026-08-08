@@ -400,6 +400,7 @@ const Lock = (p: any) => <Icon {...p} d={['M19 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 
 const Unlock = (p: any) => <Icon {...p} d={['M19 11H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2z','M17 11V7a5 5 0 0 0-9.9-1']} />;
 const Warehouse = (p: any) => <Icon {...p} d={['M22 8.35V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.35A2 2 0 0 1 3.26 6.5l8-3.21a2 2 0 0 1 1.48 0l8 3.21A2 2 0 0 1 22 8.35z','M6 18h12','M6 14h12','M15 22v-4a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v4']} />;
 const Sparkles = (p: any) => <Icon {...p} d={['M12 3l1.88 5.76 5.62.82-4.08 3.95.97 5.6L12 16.5l-5.39 2.63.97-5.6L3.5 9.58l5.62-.82z']} />;
+const MoreHorizontal = (p: any) => <Icon {...p} d={['M8 12h.01','M12 12h.01','M16 12h.01']} strokeWidth={3} />;
 const Users = (p: any) => <Icon {...p} d={['M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2','M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z','M23 21v-2a4 4 0 0 0-3-3.87','M16 3.13a4 4 0 0 1 0 7.75']} />;
 const PlayCircle = (p: any) => <Icon {...p} d={['M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z','M10 8l6 4-6 4V8z']} />;
 const RefreshCw = (p: any) => <Icon {...p} d={['M23 4v6h-6','M1 20v-6h6','M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15']} />;
@@ -2282,14 +2283,19 @@ const ReportTab = ({ folio, scans, onTabChange, addToast }: {
     const report = useMemo(() => {
         if (!folio) return { rows: [], totalItems: 0, scannedItems: 0, missingItems: 0, sobranteItems: 0 };
         const allKeys = new Set([...Object.keys(folio.theoreticalMap || {}), ...Object.keys(folio.existenciasMap || {})]);
+        const scansByVkey = new Map<string, Scan[]>();
+        scans.forEach(s => {
+            const list = scansByVkey.get(s.vkey);
+            if (list) list.push(s);
+            else scansByVkey.set(s.vkey, [s]);
+        });
         const rows = Array.from(allKeys).map(vkey => {
             const teo = folio.theoreticalMap[vkey] || 0;
             const fis = folio.existenciasMap[vkey] || 0;
             const diff = fis - teo;
             const parts = splitKey(vkey);
             const areaMap: { [a: string]: number } = {};
-            scans.filter(s => s.vkey === vkey).forEach(s => { areaMap[s.area] = (areaMap[s.area] || 0) + 1; });
-            // parcial: escaneado al menos 1 pero menos del teórico
+            (scansByVkey.get(vkey) ?? []).forEach(s => { areaMap[s.area] = (areaMap[s.area] || 0) + 1; });
             const status: 'ok' | 'faltante' | 'sobrante' | 'parcial' = diff === 0 ? 'ok' : diff > 0 ? 'sobrante' : fis > 0 ? 'parcial' : 'faltante';
             return { vkey, teo, fis, diff, status, areaMap, ...parts };
         });
@@ -4930,6 +4936,7 @@ const App: React.FC = () => {
     const [showSettings,  setShowSettings]  = useState(false);
     const [showOperators, setShowOperators] = useState(false);
     const [showSearch,    setShowSearch]    = useState(false);
+    const [showMoreMenu,  setShowMoreMenu]  = useState(false);
     const [activeScannerCount, setActiveScannerCount] = useState(0);
     const [isDark, setIsDark] = useState(() => loadUIPrefs().dark);
 
@@ -5125,6 +5132,10 @@ const App: React.FC = () => {
         { id: 'almacen',     label: 'Almacén',      icon: <Warehouse />, roles: ['admin'] },
     ];
     const visibleTabs = role === 'scanner' ? [] : tabs.filter(t => t.roles.includes(role!));
+    const MORE_TAB_IDS = new Set(['colores', 'database', 'info']);
+    const primaryTabs  = visibleTabs.filter(t => !MORE_TAB_IDS.has(t.id));
+    const moreTabs     = visibleTabs.filter(t =>  MORE_TAB_IDS.has(t.id));
+    const activeInMore = moreTabs.some(t => t.id === activeTab);
 
     return (
         <div className="flex flex-col h-screen bg-slate-50 dark:bg-slate-950 dark:text-white">
@@ -5194,22 +5205,50 @@ const App: React.FC = () => {
             </main>
 
             {role === 'admin' && visibleTabs.length > 0 && (
-                <nav className="bg-white dark:bg-slate-900 dark:border-slate-700 border-t flex justify-around fixed bottom-0 w-full z-20 overflow-x-auto py-1">
-                    {visibleTabs.map(t => (
-                        <button key={t.id} onClick={() => handleTabChange(t.id as Tab)}
-                            className={`flex flex-col items-center px-2 py-2 min-w-[48px] rounded-xl transition-all relative ${activeTab === t.id ? 'text-sky-600 bg-sky-50 dark:bg-sky-900/30' : 'text-slate-400 dark:text-slate-500'}`}>
-                            <div className="w-5 h-5 relative">
-                                {t.icon}
-                                {(t.badge ?? 0) > 0 && (
-                                    <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-3.5 bg-emerald-500 text-white text-[9px] font-black rounded-full flex items-center justify-center px-0.5 leading-none">
-                                        {t.badge}
-                                    </span>
+                <>
+                    {showMoreMenu && (
+                        <div className="fixed inset-0 z-30" onClick={() => setShowMoreMenu(false)} />
+                    )}
+                    <nav className="bg-white dark:bg-slate-900 dark:border-slate-700 border-t flex justify-around fixed bottom-0 w-full z-40 py-1">
+                        {primaryTabs.map(t => (
+                            <button key={t.id} onClick={() => { handleTabChange(t.id as Tab); setShowMoreMenu(false); }}
+                                className={`flex flex-col items-center px-2 py-2 flex-1 rounded-xl transition-all relative ${activeTab === t.id ? 'text-sky-600 bg-sky-50 dark:bg-sky-900/30' : 'text-slate-400 dark:text-slate-500'}`}>
+                                <div className="w-5 h-5 relative">
+                                    {t.icon}
+                                    {(t.badge ?? 0) > 0 && (
+                                        <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-3.5 bg-emerald-500 text-white text-[9px] font-black rounded-full flex items-center justify-center px-0.5 leading-none">
+                                            {t.badge}
+                                        </span>
+                                    )}
+                                </div>
+                                <span className="text-[9px] font-medium mt-0.5 whitespace-nowrap">{t.label}</span>
+                            </button>
+                        ))}
+                        {moreTabs.length > 0 && (
+                            <button onClick={() => setShowMoreMenu(v => !v)}
+                                className={`flex flex-col items-center px-2 py-2 flex-1 rounded-xl transition-all relative ${activeInMore || showMoreMenu ? 'text-sky-600 bg-sky-50 dark:bg-sky-900/30' : 'text-slate-400 dark:text-slate-500'}`}>
+                                <div className="w-5 h-5">
+                                    {showMoreMenu ? <ChevronDown size={20} /> : <MoreHorizontal size={20} />}
+                                </div>
+                                <span className="text-[9px] font-medium mt-0.5 whitespace-nowrap">
+                                    {activeInMore ? (moreTabs.find(t => t.id === activeTab)?.label ?? 'Más') : 'Más'}
+                                </span>
+
+                                {showMoreMenu && (
+                                    <div className="absolute bottom-full right-0 mb-2 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-2xl shadow-2xl overflow-hidden min-w-[160px]" onClick={e => e.stopPropagation()}>
+                                        {moreTabs.map(t => (
+                                            <button key={t.id} onClick={() => { handleTabChange(t.id as Tab); setShowMoreMenu(false); }}
+                                                className={`w-full flex items-center gap-3 px-4 py-3 transition-colors ${activeTab === t.id ? 'bg-sky-50 dark:bg-sky-900/30 text-sky-600' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}>
+                                                <div className="w-5 h-5 flex-shrink-0">{t.icon}</div>
+                                                <span className="text-sm font-medium">{t.label}</span>
+                                            </button>
+                                        ))}
+                                    </div>
                                 )}
-                            </div>
-                            <span className="text-[9px] font-medium mt-0.5 whitespace-nowrap">{t.label}</span>
-                        </button>
-                    ))}
-                </nav>
+                            </button>
+                        )}
+                    </nav>
+                </>
             )}
 
             <style>{`

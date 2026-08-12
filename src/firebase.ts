@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import {
     getFirestore, collection, doc, setDoc, getDoc, getDocs,
-    onSnapshot, deleteDoc, query, where, writeBatch,
+    onSnapshot, deleteDoc, query, where, orderBy, limit, writeBatch,
     updateDoc, increment, serverTimestamp, FieldPath
 } from 'firebase/firestore';
 
@@ -67,8 +67,10 @@ export const fbDeleteSucursal = async (id: string) => {
 
 export const fbLoginSucursal = async (usuario: string, password: string): Promise<Sucursal | null> => {
     const hashed = await hashPassword(password);
-    const sucursales = await fbGetSucursales();
-    return sucursales.find(s => s.usuario === usuario && s.passwordHash === hashed && s.activa) ?? null;
+    const q = query(collection(db, 'sucursales'), where('usuario', '==', usuario), where('activa', '==', true));
+    const snap = await getDocs(q);
+    const found = snap.docs.find(d => (d.data() as Sucursal).passwordHash === hashed);
+    return found ? { id: found.id, ...found.data() } as Sucursal : null;
 };
 
 // ─── OPERADORES POR SUCURSAL ──────────────────────────────────────────────────
@@ -98,13 +100,16 @@ export const fbDeleteOperador = async (sucursalId: string, opId: string) => {
 
 export const fbLoginOperador = async (sucursalId: string, pin: string): Promise<OperadorFS | null> => {
     const hashed = await hashPassword(pin);
-    const ops = await fbGetOperadores(sucursalId);
-    const op = ops.find(o => o.pin === hashed && o.activo);
-    if (op) {
-        // Actualizar ultimo login
-        await updateDoc(doc(db, 'sucursales', sucursalId, 'operadores', op.id), { ultimoLogin: Date.now() });
-    }
-    return op ?? null;
+    const q = query(
+        collection(db, 'sucursales', sucursalId, 'operadores'),
+        where('pin', '==', hashed),
+        where('activo', '==', true),
+    );
+    const snap = await getDocs(q);
+    if (snap.empty) return null;
+    const op = { id: snap.docs[0].id, ...snap.docs[0].data() } as OperadorFS;
+    await updateDoc(doc(db, 'sucursales', sucursalId, 'operadores', op.id), { ultimoLogin: Date.now() });
+    return op;
 };
 
 // ─── FOLIOS (con sucursalId) ───────────────────────────────────────────────────
@@ -124,9 +129,12 @@ export const fbGetAllFolios = async (sucursalId?: string) => {
 };
 
 export const fbGetLastOpenFolio = async (sucursalId?: string) => {
-    const folios = await fbGetAllFolios(sucursalId);
-    const open = folios.filter((f: any) => f.state === 'open');
-    return open.sort((a: any, b: any) => b.createdAt - a.createdAt)[0];
+    const col = sucursalId
+        ? collection(db, 'sucursales', sucursalId, 'folios')
+        : collection(db, 'folios');
+    const q = query(col, where('state', '==', 'open'), orderBy('createdAt', 'desc'), limit(1));
+    const snap = await getDocs(q);
+    return snap.empty ? undefined : snap.docs[0].data();
 };
 
 export const fbSubscribeToFolio = (id: string, callback: (f: any) => void, sucursalId?: string) => {
@@ -373,7 +381,6 @@ export interface UbicacionSKU {
 }
 
 export const fbSaveUbicaciones = async (sucursalId: string, ubicaciones: UbicacionSKU[]) => {
-    const { doc, setDoc } = await import('firebase/firestore');
     await setDoc(
         doc(db, 'sucursales', sucursalId, 'settings', 'ubicaciones'),
         { data: ubicaciones, updatedAt: Date.now() }
@@ -381,7 +388,6 @@ export const fbSaveUbicaciones = async (sucursalId: string, ubicaciones: Ubicaci
 };
 
 export const fbGetUbicaciones = async (sucursalId: string): Promise<UbicacionSKU[]> => {
-    const { doc, getDoc } = await import('firebase/firestore');
     const snap = await getDoc(doc(db, 'sucursales', sucursalId, 'settings', 'ubicaciones'));
     if (!snap.exists()) return [];
     return snap.data().data ?? [];

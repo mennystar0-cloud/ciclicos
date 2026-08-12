@@ -3,7 +3,7 @@ import {
     fbGetLastOpenFolio, fbSubscribeToFolio,
     fbSubscribeToScans, fbSubscribeToAllSessions,
 } from './firebase.ts';
-import type { Role, Tab, Folio, Catalog, ColorMap, Scan, ToastType } from './types.ts';
+import type { Role, Tab, Folio, Catalog, ColorMap, Scan, ToastType, ScanSession } from './types.ts';
 import { AlmacenModule } from './AlmacenModule';
 import { splitKey } from './utils.ts';
 import {
@@ -194,6 +194,7 @@ const App: React.FC = () => {
     const [showSearch,    setShowSearch]    = useState(false);
     const [showMoreMenu,  setShowMoreMenu]  = useState(false);
     const [activeScannerCount, setActiveScannerCount] = useState(0);
+    const [sessions, setSessions] = useState<ScanSession[]>([]);
     const [isDark, setIsDark] = useState(() => loadUIPrefs().dark);
 
     const sucursalId = session?.sucursalId;
@@ -242,13 +243,15 @@ const App: React.FC = () => {
         return () => { unsubFolio(); unsubScans(); };
     }, [folioId, sucursalId]);
 
-    // Contador de escáneres activos para badge en nav
+    // Sesiones — badge de nav + datos para SessionsAdminTab (una sola suscripción)
     useEffect(() => {
         if (!sucursalId) return;
         const ACTIVE_THRESHOLD = 90_000;
-        const unsub = fbSubscribeToAllSessions((sessions: any[]) => {
-            const count = sessions.filter(s => s.active && (Date.now() - (s.lastSeen ?? 0)) < ACTIVE_THRESHOLD).length;
-            setActiveScannerCount(count);
+        const unsub = fbSubscribeToAllSessions((data: any[]) => {
+            const typed = data as ScanSession[];
+            setSessions(typed);
+            const count = typed.filter(s => (Date.now() - (s.lastSeen ?? 0)) < ACTIVE_THRESHOLD).length;
+            setActiveScannerCount(prev => prev === count ? prev : count);
         }, sucursalId);
         return () => unsub();
     }, [sucursalId]);
@@ -257,12 +260,38 @@ const App: React.FC = () => {
         if (!folio?.theoreticalMap) { setCatalog({ byBarcode: {}, byVariant: {} }); return; }
         const byVariant: Catalog['byVariant'] = {};
         const byBarcode: Catalog['byBarcode'] = {};
-        const tMap = folio.theoreticalMap;
-        const vkeys = Object.keys(tMap);
+        const vkeys = Object.keys(folio.theoreticalMap);
 
+        // Reset estado global mutable
+        for (const k of Object.keys(sizeSystemByModel)) delete sizeSystemByModel[k];
+        for (const k of Object.keys(tallaVariantByModel)) delete tallaVariantByModel[k];
+        uniRopaModels.clear();
+
+        // Paso 1 — pasada única: catálogo + uniRopa + __VAR__ + sizeparts
+        const spByModel: Record<string, number[]> = {};
         for (const vkey of vkeys) {
-            // Ignorar marcadores de sistema (__SYS__) — no son inventario real
-            if (vkey.includes('|__SYS__|')) continue;
+            const isRopa = vkey.startsWith('R|');
+            if (isRopa) {
+                const p = vkey.split('|');
+                const col = p[2], sp3 = p[3], mod = p[1];
+                if (col === '__VAR__') {
+                    if (sp3) {
+                        const [base, variant] = sp3.split(':');
+                        if (base && variant) {
+                            if (!tallaVariantByModel[mod]) tallaVariantByModel[mod] = {};
+                            tallaVariantByModel[mod][base] = variant;
+                        }
+                    }
+                    continue;
+                }
+                if (col === '__SYS__') continue;
+                if (sp3 === '990') uniRopaModels.add(mod);
+                const sp = parseInt(sp3 || '0');
+                if (!isNaN(sp)) {
+                    if (!spByModel[mod]) spByModel[mod] = [];
+                    spByModel[mod].push(sp);
+                }
+            }
             const parts = splitKey(vkey);
             if (!parts.mod) continue;
             const item = { mod: parts.mod, color: parts.color || '', talla: parts.talla || '', vkey, category: parts.category };
@@ -270,72 +299,20 @@ const App: React.FC = () => {
             if (parts.barcode) byBarcode[parts.barcode] = item;
         }
 
-        // Limpiar y reconstruir sizeSystemByModel y uniRopaModels desde cero
-        for (const k of Object.keys(sizeSystemByModel)) delete sizeSystemByModel[k];
-        uniRopaModels.clear();
-        // Detectar modelos UNI de ropa (tienen sizePart=990 en el vkey)
+        // Paso 2 — marcadores __SYS__ (necesita spByModel del paso 1)
         for (const vkey of vkeys) {
             if (!vkey.startsWith('R|')) continue;
             const p = vkey.split('|');
-            if (p[3] === '990' && p[2] !== '__SYS__') uniRopaModels.add(p[1]);
+            if (p[2] !== '__SYS__' || !p[3]) continue;
+            const sys = p[3] as SizeSystem;
+            const sps = spByModel[p[1]] || [];
+            if (sys === 'brasier' && !sps.includes(160)) continue;
+            sizeSystemByModel[p[1]] = sys;
         }
 
-        // Paso 0: leer marcadores __VAR__ para variantes de talla (CHM, GEX, etc.)
-        for (const k of Object.keys(tallaVariantByModel)) delete tallaVariantByModel[k];
-        for (const vkey of vkeys) {
-            if (!vkey.startsWith('R|')) continue;
-            const p = vkey.split('|');
-            if (p[2] === '__VAR__' && p[3]) {
-                const [base, variant] = p[3].split(':');
-                if (base && variant) {
-                    if (!tallaVariantByModel[p[1]]) tallaVariantByModel[p[1]] = {};
-                    tallaVariantByModel[p[1]][base] = variant;
-                }
-            }
-        }
-
-        // Paso 1: leer marcadores __SYS__ guardados en Firebase (fuente mas confiable)
-        // Recolectar sizeparts reales primero para validar marcadores
-        const spCheckMap: Record<string, number[]> = {};
-        for (const vkey of vkeys) {
-            if (!vkey.startsWith('R|')) continue;
-            const p = vkey.split('|');
-            if (p[2] === '__SYS__' || p[2] === '__VAR__') continue;
-            const sp = parseInt(p[3] || '0');
-            if (!isNaN(sp) && p[1]) {
-                if (!spCheckMap[p[1]]) spCheckMap[p[1]] = [];
-                spCheckMap[p[1]].push(sp);
-            }
-        }
-        for (const vkey of vkeys) {
-            if (!vkey.startsWith('R|')) continue;
-            const p = vkey.split('|');
-            if (p[2] === '__SYS__' && p[3]) {
-                const sys = p[3] as SizeSystem;
-                const sps = spCheckMap[p[1]] || [];
-                // Validar marcador brasier: brasier real tiene sp=160
-                // Si marcador dice brasier pero no hay sp=160 → ignorar (marcador corrupto)
-                if (sys === 'brasier' && !sps.includes(160)) continue;
-                sizeSystemByModel[p[1]] = sys;
-            }
-        }
-
-        // Paso 2: inferir por sizePart para modelos sin marcador (folios viejos)
-        // Primero recolectar todos los sizeparts por modelo
-        const spByModel: Record<string, number[]> = {};
-        for (const vkey of vkeys) {
-            if (!vkey.startsWith('R|')) continue;
-            const p = vkey.split('|');
-            if (p[2] === '__SYS__') continue;
-            const modKey = p[1] || '';
-            const sp = parseInt(p[3] || '0');
-            if (!modKey || isNaN(sp)) continue;
-            if (!spByModel[modKey]) spByModel[modKey] = [];
-            spByModel[modKey].push(sp);
-        }
+        // Paso 3 — inferir sistema para modelos sin marcador
         for (const [modKey, sps] of Object.entries(spByModel)) {
-            if (sizeSystemByModel[modKey]) continue; // ya tiene marcador __SYS__
-            // Inferir sistema por mayoria de sps — ignorar sps corruptos de versiones anteriores
+            if (sizeSystemByModel[modKey]) continue;
             const damaCount   = sps.filter(sp => sp >= 100 && sp <= 160 && sp % 10 === 0).length;
             const jeansDCount = sps.filter(sp => [30,50,70,90].includes(sp)).length;
             const jeansCCount = sps.filter(sp => sp >= 280 && sp <= 500).length;
@@ -345,9 +322,7 @@ const App: React.FC = () => {
             if (sps.includes(160) || sps.some(sp => sp >= 232 && sp <= 260)) { sizeSystemByModel[modKey] = 'brasier'; continue; }
             if (jeansCCount > 0)                                 { sizeSystemByModel[modKey] = 'jeans_cab'; continue; }
             if (bebeCount > 1)                                   { sizeSystemByModel[modKey] = 'bebe';      continue; }
-            // anos: mayoria de sps en 109-129 sin sps de dama (100,120,140)
             if (anosCount > 0 && damaCount === 0)                { sizeSystemByModel[modKey] = 'anos';      continue; }
-            // jeans_dama: sps de tallas pequeñas SON mayoria
             if (jeansDCount > 0 && jeansDCount >= damaCount)    { sizeSystemByModel[modKey] = 'jeans_dama'; continue; }
             sizeSystemByModel[modKey] = 'dama';
         }
@@ -445,19 +420,25 @@ const App: React.FC = () => {
             </header>
 
             <main className={`flex-1 overflow-auto p-4 ${role === 'admin' ? 'pb-24' : 'pb-4'}`}>
-                <ErrorBoundary tab={activeTab}>
-                    {activeTab === 'folio'       && role === 'admin'   && <FolioTab onJoin={(id) => { setFolioId(id); setActiveTab('reporte'); }} onCreate={(id) => setFolioId(id)} addToast={addToast} colors={colors} catalog={catalog} sucursalId={sucursalId ?? undefined} />}
-                    {activeTab === 'existencias' && role === 'admin'   && <StockTab folioId={folioId} catalog={catalog} colors={colors} onUpdate={() => {}} addToast={addToast} sucursalId={sucursalId ?? undefined} />}
-                    {activeTab === 'escanear'    && role === 'scanner' && <ScannerSessionTab colors={colors} catalog={catalog} folio={folio} addToast={addToast} appSession={session} sucursalId={sucursalId ?? undefined} />}
-                    {activeTab === 'sesiones'    && role === 'admin'   && <SessionsAdminTab addToast={addToast} sucursalId={sucursalId ?? undefined} folio={folio} scans={scans} colors={colors} catalog={catalog} />}
-                    {activeTab === 'reporte'     && role === 'admin'   && <ReportTab folio={folio} scans={scans} onTabChange={handleTabChange} addToast={addToast} />}
-                    {activeTab === 'consulta'    && role === 'admin'   && <QueryTab folio={folio} scans={scans} />}
-                    {activeTab === 'historial'   && role === 'admin'   && <UbicacionesTab sucursalId={sucursalId ?? undefined} folio={folio} scans={scans} addToast={addToast} />}
-                    {activeTab === 'colores'     && role === 'admin'   && <DictTab colors={colors} onUpdate={handleUpdateColorMap} addToast={addToast} />}
-                    {activeTab === 'database'    && role === 'admin'   && <DatabaseTab addToast={addToast} sucursalId={sucursalId} />}
-                    {activeTab === 'info'        && role === 'admin'   && <InfoTab />}
-                    {activeTab === 'almacen'     && role === 'admin'   && <AlmacenModule sucursalId={sucursalId ?? undefined} isSuperAdmin={false} />}
-                </ErrorBoundary>
+                {role === 'scanner' && (
+                    <ErrorBoundary tab="escanear">
+                        <ScannerSessionTab colors={colors} catalog={catalog} folio={folio} addToast={addToast} appSession={session} sucursalId={sucursalId ?? undefined} />
+                    </ErrorBoundary>
+                )}
+                {role === 'admin' && (
+                    <>
+                        <div className={activeTab === 'folio'       ? '' : 'hidden'}><ErrorBoundary tab="folio">      <FolioTab onJoin={(id) => { setFolioId(id); setActiveTab('reporte'); }} onCreate={(id) => setFolioId(id)} addToast={addToast} colors={colors} catalog={catalog} sucursalId={sucursalId ?? undefined} /></ErrorBoundary></div>
+                        <div className={activeTab === 'existencias'  ? '' : 'hidden'}><ErrorBoundary tab="existencias"><StockTab folioId={folioId} catalog={catalog} colors={colors} onUpdate={() => {}} addToast={addToast} sucursalId={sucursalId ?? undefined} /></ErrorBoundary></div>
+                        <div className={activeTab === 'sesiones'     ? '' : 'hidden'}><ErrorBoundary tab="sesiones">  <SessionsAdminTab addToast={addToast} sucursalId={sucursalId ?? undefined} folio={folio} scans={scans} colors={colors} catalog={catalog} sessions={sessions} /></ErrorBoundary></div>
+                        <div className={activeTab === 'reporte'      ? '' : 'hidden'}><ErrorBoundary tab="reporte">   <ReportTab folio={folio} scans={scans} onTabChange={handleTabChange} addToast={addToast} /></ErrorBoundary></div>
+                        <div className={activeTab === 'consulta'     ? '' : 'hidden'}><ErrorBoundary tab="consulta">  <QueryTab folio={folio} scans={scans} /></ErrorBoundary></div>
+                        <div className={activeTab === 'historial'    ? '' : 'hidden'}><ErrorBoundary tab="historial"> <UbicacionesTab sucursalId={sucursalId ?? undefined} folio={folio} scans={scans} addToast={addToast} /></ErrorBoundary></div>
+                        <div className={activeTab === 'colores'      ? '' : 'hidden'}><ErrorBoundary tab="colores">   <DictTab colors={colors} onUpdate={handleUpdateColorMap} addToast={addToast} /></ErrorBoundary></div>
+                        <div className={activeTab === 'database'     ? '' : 'hidden'}><ErrorBoundary tab="database">  <DatabaseTab addToast={addToast} sucursalId={sucursalId} /></ErrorBoundary></div>
+                        <div className={activeTab === 'info'         ? '' : 'hidden'}><ErrorBoundary tab="info">      <InfoTab /></ErrorBoundary></div>
+                        <div className={activeTab === 'almacen'      ? '' : 'hidden'}><ErrorBoundary tab="almacen">   <AlmacenModule sucursalId={sucursalId ?? undefined} isSuperAdmin={false} /></ErrorBoundary></div>
+                    </>
+                )}
             </main>
 
             {role === 'admin' && visibleTabs.length > 0 && (

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { fbAddScan, fbAddSessionScan, fbCreateScanSession, fbDeleteScan, fbDeleteSession, fbSubscribeToSession, fbSubscribeToSessionItems } from './firebase.ts';
+import { fbAddScan, fbAddSessionScan, fbCreateScanSession, fbDeleteScan, fbDeleteSession, fbSubscribeToSession, fbSubscribeToSessionItems, fbUpdateSessionLastSeen, fbUndoSessionItem } from './firebase.ts';
 import { tryDecodeStructuredBarcode, formatDate } from './utils.ts';
 import { decodeRopaBarcode, formatTallaFromVkey } from './ropaUtils.ts';
 import { Camera, CameraOff, Check, Download, MapPin, PlayCircle, QrCode, RefreshCw, Users, VolumeX, Volume2, Zap, X, AlertTriangle } from './icons.tsx';
@@ -31,6 +31,7 @@ export const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession
     const [lastScan, setLastScan] = useState<any>(null);
     const [streak, setStreak] = useState(0);
     const [soundOn, setSoundOn] = useState(true);
+    const audioCtxRef = useRef<AudioContext | null>(null);
     const [cameraOn, setCameraOn] = useState(false);
     const [loading, setLoading] = useState(false);
     const [savedSessions, setSavedSessions] = useState<ScanSession[]>([]);
@@ -69,25 +70,17 @@ export const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession
     // Heartbeat: actualiza lastSeen cada 30 segundos para presencia en tiempo real
     useEffect(() => {
         if (!currentSession) return;
-        const updateLastSeen = async () => {
-            try {
-                const { doc, updateDoc } = await import('firebase/firestore');
-                const { db } = await import('./firebase.ts');
-                const ref = sucursalId
-                    ? doc(db, 'sucursales', sucursalId, 'scanSessions', currentSession.id)
-                    : doc(db, 'scanSessions', currentSession.id);
-                await updateDoc(ref, { lastSeen: Date.now() });
-            } catch {}
-        };
-        updateLastSeen(); // Actualizar inmediatamente al iniciar
-        const interval = setInterval(updateLastSeen, 30000); // Cada 30s
+        const updateLastSeen = () => fbUpdateSessionLastSeen(currentSession.id, sucursalId).catch(() => {});
+        updateLastSeen();
+        const interval = setInterval(updateLastSeen, 30000);
         return () => clearInterval(interval);
     }, [currentSession?.id, sucursalId]);
 
     const playBeep = useCallback((ok: boolean) => {
         if (!soundOn) return;
         try {
-            const ctx = new AudioContext();
+            if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
+            const ctx = audioCtxRef.current;
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
             osc.connect(gain); gain.connect(ctx.destination);
@@ -203,25 +196,9 @@ export const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession
 
     const handleUndo = async () => {
         if (!currentSession || sessionItems.length === 0) { addToast('Nada que deshacer', 'info'); return; }
-        // delete last item from subcollection
         const last = sessionItems[0];
         try {
-            const { doc, deleteDoc } = await import('firebase/firestore');
-            const { db } = await import('./firebase.ts');
-            const sessionPath = sucursalId
-                ? doc(db, 'sucursales', sucursalId, 'scanSessions', currentSession.id, 'items', last.id)
-                : doc(db, 'scanSessions', currentSession.id, 'items', last.id);
-            await deleteDoc(sessionPath);
-            // update count en sesión
-            const { setDoc, getDoc } = await import('firebase/firestore');
-            const ref = sucursalId
-                ? doc(db, 'sucursales', sucursalId, 'scanSessions', currentSession.id)
-                : doc(db, 'scanSessions', currentSession.id);
-            const snap = await getDoc(ref);
-            if (snap.exists()) {
-                await setDoc(ref, { ...snap.data(), count: Math.max(0, (snap.data().count || 1) - 1) });
-            }
-            // revertir en existenciasMap del folio
+            await fbUndoSessionItem(currentSession.id, last.id, sucursalId);
             if (last.recognized && last.vkey && folio) {
                 await fbDeleteScan(last.id, folio.id, last.vkey);
             }

@@ -278,6 +278,27 @@ export const fbSubscribeToAllSessions = (callback: (sessions: any[]) => void, su
     });
 };
 
+export const fbUndoSessionItem = async (sessionId: string, itemId: string, sucursalId?: string) => {
+    const sessionRef = sucursalId
+        ? doc(db, 'sucursales', sucursalId, 'scanSessions', sessionId)
+        : doc(db, 'scanSessions', sessionId);
+    const itemRef = doc(sessionRef, 'items', itemId);
+    const snap = await getDoc(sessionRef);
+    await Promise.all([
+        deleteDoc(itemRef),
+        snap.exists()
+            ? setDoc(sessionRef, { ...snap.data(), count: Math.max(0, (snap.data().count || 1) - 1) })
+            : Promise.resolve(),
+    ]);
+};
+
+export const fbUpdateSessionLastSeen = async (sessionId: string, sucursalId?: string) => {
+    const ref = sucursalId
+        ? doc(db, 'sucursales', sucursalId, 'scanSessions', sessionId)
+        : doc(db, 'scanSessions', sessionId);
+    await updateDoc(ref, { lastSeen: Date.now() });
+};
+
 export const fbDeleteSession = async (sessionId: string, sucursalId?: string) => {
     const sessionRef = sucursalId
         ? doc(db, 'sucursales', sucursalId, 'scanSessions', sessionId)

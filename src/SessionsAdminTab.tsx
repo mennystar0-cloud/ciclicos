@@ -1,20 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { fbDeleteSession, fbGetAllFolios, fbGetScans, fbGetSessionItems, fbSubscribeToAllSessions, fbAddScan } from './firebase.ts';
+import { fbDeleteSession, fbGetAllFolios, fbGetScans, fbGetSessionItems, fbAddScan } from './firebase.ts';
 import { tryDecodeStructuredBarcode, formatDate } from './utils.ts';
 import { decodeRopaBarcode } from './ropaUtils.ts';
 import { ChevronUp, Download, Eye, RefreshCw, Upload, Users, Wifi } from './icons.tsx';
 import { CoverageRing } from './CoverageRing.tsx';
 import { useConfirm } from './hooks.tsx';
 import type { Folio, Scan, ColorMap, Catalog, ToastType, ScanSession, SessionItem } from './types.ts';
-export const SessionsAdminTab = ({ addToast, sucursalId, folio, scans, colors, catalog }: {
+export const SessionsAdminTab = ({ addToast, sucursalId, folio, scans, colors, catalog, sessions }: {
     addToast: (m: string, t?: ToastType) => void;
     sucursalId?: string;
     folio: Folio | null;
     scans: Scan[];
     colors: ColorMap;
     catalog: Catalog;
+    sessions: ScanSession[];
 }) => {
-    const [sessions, setSessions] = useState<ScanSession[]>([]);
     const [expanded, setExpanded] = useState<string | null>(null);
     const [items, setItems] = useState<{ [id: string]: SessionItem[] }>({});
     const [loadingItems, setLoadingItems] = useState<string | null>(null);
@@ -23,11 +23,6 @@ export const SessionsAdminTab = ({ addToast, sucursalId, folio, scans, colors, c
     const [now, setNow] = useState(Date.now());
     const importRef = React.useRef<HTMLInputElement>(null);
     const { confirm: askConfirm, modal: confirmModal } = useConfirm();
-
-    useEffect(() => {
-        const unsub = fbSubscribeToAllSessions((s) => setSessions(s as ScanSession[]), sucursalId);
-        return () => unsub();
-    }, [sucursalId]);
 
     // Actualizar "now" cada 30s para que los indicadores activo/inactivo se refresquen
     useEffect(() => {

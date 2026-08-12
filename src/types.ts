@@ -71,3 +71,29 @@ export interface Scan {
 }
 
 export type ColorMap = { [name: string]: string };
+
+export type ToastType = 'success' | 'error' | 'info' | 'warning';
+
+export interface ScanSession {
+    id: string;
+    area: string;
+    operator: string;
+    operadorId?: string;
+    deviceId?: string;
+    sucursalId?: string;
+    createdAt: any;
+    count: number;
+    lastSeen?: number;
+}
+
+export interface SessionItem {
+    id: string;
+    sessionId: string;
+    code: string;
+    ts: number;
+    mod?: string;
+    color?: string;
+    talla?: string;
+    vkey?: string;
+    recognized: boolean;
+}

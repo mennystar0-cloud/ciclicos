@@ -1,6 +1,7 @@
 ﻿import { useState, useMemo } from 'react';
 import { splitKey, getSizeCode } from './utils.ts';
-import { formatTallaConCategoria, ALL_ROPA_MAPS } from './ropaUtils.ts';
+import { formatTallaConCategoria, formatTallaFromVkey, ALL_ROPA_MAPS } from './ropaUtils.ts';
+import { CoverageRing } from './CoverageRing.tsx';
 import {
     BarChart3, Search, Package, Check, AlertTriangle, Printer,
     ChevronUp, ChevronRight, ChevronDown, FileText, Download,

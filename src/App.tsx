@@ -85,14 +85,23 @@ const ToastContainer = ({ toasts, onRemove }: { toasts: Toast[]; onRemove: (id: 
 );
 
 // ─── CONFETTI ─────────────────────────────────────────────────────────────────
+const CONFETTI_COLORS = ['#f59e0b','#10b981','#3b82f6','#ef4444','#8b5cf6','#ec4899'];
+const CONFETTI_PARTICLES = Array.from({ length: 50 }, (_, i) => ({
+    left: `${Math.random() * 100}vw`,
+    color: CONFETTI_COLORS[i % 6],
+    duration: `${0.8 + Math.random() * 1.2}s`,
+    delay: `${Math.random() * 0.5}s`,
+    rotation: Math.round(Math.random() * 360),
+}));
+
 const Confetti = ({ active }: { active: boolean }) => {
     if (!active) return null;
-    return <>{Array.from({ length: 50 }, (_, i) => (
+    return <>{CONFETTI_PARTICLES.map((p, i) => (
         <div key={i} className="fixed pointer-events-none z-[200] w-3 h-3 rounded-sm" style={{
-            left: `${Math.random() * 100}vw`, top: '-20px',
-            background: ['#f59e0b','#10b981','#3b82f6','#ef4444','#8b5cf6','#ec4899'][i % 6],
-            animation: `confetti ${0.8 + Math.random() * 1.2}s ${Math.random() * 0.5}s linear forwards`,
-            transform: `rotate(${Math.random() * 360}deg)`
+            left: p.left, top: '-20px',
+            background: p.color,
+            animation: `confetti ${p.duration} ${p.delay} linear forwards`,
+            transform: `rotate(${p.rotation}deg)`
         }} />
     ))}</>;
 };
@@ -127,33 +136,26 @@ export const useOnlineStatus = () => {
     return online;
 };
 
-const OfflineBanner = () => {
-    const [online, setOnline] = React.useState(navigator.onLine);
+const OfflineBanner = ({ isOnline }: { isOnline: boolean }) => {
     const [justReconnected, setJustReconnected] = React.useState(false);
     const [offlineSince, setOfflineSince] = React.useState<number | null>(null);
     const wasOffline = React.useRef(false);
 
     React.useEffect(() => {
-        const on = () => {
-            setOnline(true);
+        if (isOnline) {
             setOfflineSince(null);
             if (wasOffline.current) {
                 setJustReconnected(true);
                 setTimeout(() => setJustReconnected(false), 3500);
             }
             wasOffline.current = false;
-        };
-        const off = () => {
-            setOnline(false);
+        } else {
             setOfflineSince(Date.now());
             wasOffline.current = true;
-        };
-        window.addEventListener('online', on);
-        window.addEventListener('offline', off);
-        return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
-    }, []);
+        }
+    }, [isOnline]);
 
-    if (online && !justReconnected) return null;
+    if (isOnline && !justReconnected) return null;
 
     if (justReconnected) return (
         <div style={{ animation: 'slideDown 0.3s ease' }} className="bg-emerald-500 text-white px-4 py-2.5 flex items-center gap-2 text-sm font-semibold z-30">
@@ -370,7 +372,7 @@ const App: React.FC = () => {
 
     return (
         <div className="flex flex-col h-screen bg-slate-50 dark:bg-slate-950 dark:text-white">
-            <OfflineBanner />
+            <OfflineBanner isOnline={isOnline} />
             <ToastContainer toasts={toasts} onRemove={id => setToasts(prev => prev.filter(t => t.id !== id))} />
             <Confetti active={confetti} />
 

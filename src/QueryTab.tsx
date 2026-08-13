@@ -6,6 +6,17 @@ import type { Folio, Scan } from './types.ts';
 
 export const QueryTab = ({ folio, scans }: { folio: Folio | null; scans: Scan[] }) => {
     const [query, setQuery] = useState('');
+
+    const scansByVkey = useMemo(() => {
+        const map = new Map<string, Record<string, number>>();
+        for (const s of scans) {
+            if (!map.has(s.vkey)) map.set(s.vkey, {});
+            const areas = map.get(s.vkey)!;
+            areas[s.area] = (areas[s.area] || 0) + 1;
+        }
+        return map;
+    }, [scans]);
+
     const results = useMemo(() => {
         if (!folio || !query.trim()) return [];
         const q = query.trim().toUpperCase();
@@ -15,11 +26,9 @@ export const QueryTab = ({ folio, scans }: { folio: Folio | null; scans: Scan[] 
             if (!parts.mod.includes(q) && !parts.color.includes(q) && !parts.talla.includes(q)) return null;
             const teo = folio.theoreticalMap[vkey] || 0;
             const fis = folio.existenciasMap[vkey] || 0;
-            const areaMap: { [a: string]: number } = {};
-            scans.filter(s => s.vkey === vkey).forEach(s => { areaMap[s.area] = (areaMap[s.area] || 0) + 1; });
-            return { vkey, teo, fis, diff: fis - teo, areaMap, ...parts };
+            return { vkey, teo, fis, diff: fis - teo, areaMap: scansByVkey.get(vkey) ?? {}, ...parts };
         }).filter(Boolean) as any[];
-    }, [folio, query, scans]);
+    }, [folio, query, scansByVkey]);
 
     if (!folio) return <div className="text-center py-12 text-slate-400"><Search className="w-12 h-12 mx-auto mb-2 opacity-30" /><p>Abre un inventario primero</p></div>;
 

@@ -2,7 +2,7 @@ import { initializeApp } from 'firebase/app';
 import {
     getFirestore, collection, doc, setDoc, getDoc, getDocs,
     onSnapshot, deleteDoc, query, where, orderBy, limit, writeBatch,
-    updateDoc, increment, serverTimestamp, FieldPath
+    updateDoc, increment, serverTimestamp, FieldPath, Timestamp
 } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -118,6 +118,51 @@ export const fbCreateFolio = async (folio: any) => {
         ? doc(db, 'sucursales', folio.sucursalId, 'folios', folio.id)
         : doc(db, 'folios', folio.id);
     await setDoc(path, { ...folio, updatedAt: serverTimestamp() });
+};
+
+export const fbGetFolio = async (folioId: string, sucursalId?: string) => {
+    const path = sucursalId
+        ? doc(db, 'sucursales', sucursalId, 'folios', folioId)
+        : doc(db, 'folios', folioId);
+    const snap = await getDoc(path);
+    return snap.exists() ? snap.data() : null;
+};
+
+export const fbAddScansBatch = async (scans: any[], folioId: string, sucursalId?: string) => {
+    if (scans.length === 0) return;
+    const scansCol = sucursalId
+        ? collection(db, 'sucursales', sucursalId, 'scans')
+        : collection(db, 'scans');
+    const folioPath = sucursalId
+        ? doc(db, 'sucursales', sucursalId, 'folios', folioId)
+        : doc(db, 'folios', folioId);
+
+    // Agregar incrementos por vkey y área antes de escribir
+    const vkeyInc: Record<string, number> = {};
+    const areaInc: Record<string, number> = {};
+    for (const scan of scans) {
+        vkeyInc[scan.vkey] = (vkeyInc[scan.vkey] || 0) + 1;
+        areaInc[scan.area] = (areaInc[scan.area] || 0) + 1;
+    }
+    const folioUpdate: Record<string, any> = { updatedAt: serverTimestamp() };
+    for (const [vkey, count] of Object.entries(vkeyInc)) {
+        folioUpdate[`existenciasMap.${vkey}`] = increment(count);
+    }
+    for (const [area, count] of Object.entries(areaInc)) {
+        folioUpdate[`areaCounters.${area}`] = increment(count);
+    }
+
+    // Escribir en lotes de 490 (límite Firestore: 500 ops por batch)
+    const CHUNK = 490;
+    for (let i = 0; i < scans.length; i += CHUNK) {
+        const chunk = scans.slice(i, i + CHUNK);
+        const batch = writeBatch(db);
+        for (const scan of chunk) {
+            batch.set(doc(scansCol, scan.id), { ...scan, createdAt: serverTimestamp() });
+        }
+        if (i === 0) batch.update(folioPath, folioUpdate); // folio update solo en primer batch
+        await batch.commit();
+    }
 };
 
 export const fbGetAllFolios = async (sucursalId?: string) => {
@@ -273,7 +318,9 @@ export const fbSubscribeToAllSessions = (callback: (sessions: any[]) => void, su
     const col = sucursalId
         ? collection(db, 'sucursales', sucursalId, 'scanSessions')
         : collection(db, 'scanSessions');
-    return onSnapshot(col, snap => {
+    const sevenDaysAgo = Timestamp.fromMillis(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const q = query(col, where('createdAt', '>', sevenDaysAgo));
+    return onSnapshot(q, snap => {
         callback(snap.docs.map(d => d.data()).sort((a: any, b: any) => b.createdAt?.seconds - a.createdAt?.seconds));
     });
 };

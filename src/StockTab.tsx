@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { fbGetAllFolios, fbUpdateFolio } from './firebase.ts';
+import { fbGetFolio, fbUpdateFolio } from './firebase.ts';
 import {
     cleanModel, canonical, keyOf, detectCategoryBySize,
 } from './utils.ts';
@@ -177,8 +177,7 @@ export const StockTab = ({ folioId, catalog, colors, onUpdate, addToast, sucursa
                 else theoretical[item.vkey] = (theoretical[item.vkey] || 0) + item.qty;
             }
 
-            const all = await fbGetAllFolios(sucursalId);
-            const folio = (all as Folio[]).find(f => f.id === folioId);
+            const folio = await fbGetFolio(folioId, sucursalId) as Folio | null;
             if (!folio) {
                 addToast('No se encontró el inventario en Firebase', 'error');
                 setLoading(false);

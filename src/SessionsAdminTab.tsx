@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fbDeleteSession, fbGetAllFolios, fbGetScans, fbGetSessionItems, fbAddScan } from './firebase.ts';
+import { fbDeleteSession, fbGetLastOpenFolio, fbGetScans, fbGetSessionItems, fbAddScan, fbAddScansBatch } from './firebase.ts';
 import { tryDecodeStructuredBarcode, formatDate } from './utils.ts';
 import { decodeRopaBarcode } from './ropaUtils.ts';
 import { ChevronUp, Download, Eye, RefreshCw, Upload, Users, Wifi } from './icons.tsx';
@@ -74,14 +74,14 @@ export const SessionsAdminTab = ({ addToast, sucursalId, folio, scans, colors, c
                 addToast('Archivo inválido — debe ser un JSON exportado de sesión', 'error');
                 return;
             }
-            const folios = await fbGetAllFolios(sucursalId) as Folio[];
-            const openFolio = folios.find(f => f.state === 'open');
+            const openFolio = await fbGetLastOpenFolio(sucursalId) as Folio | undefined;
             if (!openFolio) { addToast('No hay inventario abierto para importar', 'warning'); return; }
 
             const existingScans = await fbGetScans(openFolio.id, sucursalId) as Scan[];
             const existingIds = new Set(existingScans.map(s => s.id));
 
-            let applied = 0, skipped = 0, unrecognized = 0;
+            let skipped = 0, unrecognized = 0;
+            const toApply: Scan[] = [];
             for (const item of data.items) {
                 if (existingIds.has(item.id)) { skipped++; continue; }
                 const code = String(item.code || '');
@@ -98,17 +98,16 @@ export const SessionsAdminTab = ({ addToast, sucursalId, folio, scans, colors, c
                     if (cat) decoded = { mod: cat.mod, color: cat.color, talla: cat.talla, vkey: cat.vkey };
                 }
                 if (!decoded) { unrecognized++; continue; }
-                const scan: Scan = {
+                toApply.push({
                     id: item.id, folioId: openFolio.id, code,
                     vkey: decoded.vkey, mod: decoded.mod, color: decoded.color, talla: decoded.talla,
                     area: data.area || 'Importado', pos: '0',
                     user: data.operator || 'Importado', ts: item.ts || Date.now(),
                     sucursalId: sucursalId ?? undefined,
-                };
-                await fbAddScan(scan);
-                applied++;
+                });
             }
-            addToast(`✓ ${applied} importados · ${skipped} ya existían · ${unrecognized} no reconocidos`, 'success');
+            await fbAddScansBatch(toApply, openFolio.id, sucursalId);
+            addToast(`✓ ${toApply.length} importados · ${skipped} ya existían · ${unrecognized} no reconocidos`, 'success');
         } catch (err: any) {
             addToast(`Error al importar: ${err?.message || 'archivo inválido'}`, 'error');
         } finally {
@@ -126,9 +125,7 @@ export const SessionsAdminTab = ({ addToast, sucursalId, folio, scans, colors, c
     const syncSession = async (session: ScanSession) => {
         setSyncing(session.id);
         try {
-            // Obtener folio activo
-            const folios = await fbGetAllFolios(sucursalId) as Folio[];
-            const folio = folios.find(f => f.state === 'open');
+            const folio = await fbGetLastOpenFolio(sucursalId) as Folio | undefined;
             if (!folio) { addToast('No hay inventario abierto para sincronizar', 'warning'); setSyncing(null); return; }
 
             // Obtener todos los items de la sesión
@@ -141,29 +138,17 @@ export const SessionsAdminTab = ({ addToast, sucursalId, folio, scans, colors, c
             const existingScans = await fbGetScans(folio.id, sucursalId) as Scan[];
             const existingIds = new Set(existingScans.map(s => s.id));
 
-            // Aplicar solo los que no están ya en el folio
-            let applied = 0;
-            for (const item of recognized) {
-                if (existingIds.has(item.id)) continue;
-                const scan: Scan = {
-                    id: item.id,
-                    folioId: folio.id,
-                    code: item.code,
-                    vkey: item.vkey,
-                    mod: item.mod,
-                    color: item.color,
-                    talla: item.talla,
-                    area: session.area,
-                    pos: '0',
-                    user: session.operator,
-                    ts: item.ts,
+            const toSync: Scan[] = recognized
+                .filter(item => !existingIds.has(item.id))
+                .map(item => ({
+                    id: item.id, folioId: folio.id,
+                    code: item.code, vkey: item.vkey,
+                    mod: item.mod, color: item.color, talla: item.talla,
+                    area: session.area, pos: '0', user: session.operator, ts: item.ts,
                     sucursalId: sucursalId ?? undefined,
-                };
-                await fbAddScan(scan);
-                applied++;
-            }
-
-            addToast(`✓ ${applied} escaneos sincronizados al reporte (${recognized.length - applied} ya existían)`, 'success');
+                }));
+            await fbAddScansBatch(toSync, folio.id, sucursalId);
+            addToast(`✓ ${toSync.length} escaneos sincronizados al reporte (${recognized.length - toSync.length} ya existían)`, 'success');
         } catch (err: any) {
             addToast(`Error al sincronizar: ${err?.message || 'revisa la consola'}`, 'error');
             console.error(err);

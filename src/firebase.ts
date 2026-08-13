@@ -67,9 +67,12 @@ export const fbDeleteSucursal = async (id: string) => {
 
 export const fbLoginSucursal = async (usuario: string, password: string): Promise<Sucursal | null> => {
     const hashed = await hashPassword(password);
-    const q = query(collection(db, 'sucursales'), where('usuario', '==', usuario), where('activa', '==', true));
+    const q = query(collection(db, 'sucursales'), where('usuario', '==', usuario));
     const snap = await getDocs(q);
-    const found = snap.docs.find(d => (d.data() as Sucursal).passwordHash === hashed);
+    const found = snap.docs.find(d => {
+        const data = d.data() as Sucursal;
+        return data.passwordHash === hashed && data.activa;
+    });
     return found ? { id: found.id, ...found.data() } as Sucursal : null;
 };
 
@@ -103,11 +106,11 @@ export const fbLoginOperador = async (sucursalId: string, pin: string): Promise<
     const q = query(
         collection(db, 'sucursales', sucursalId, 'operadores'),
         where('pin', '==', hashed),
-        where('activo', '==', true),
     );
     const snap = await getDocs(q);
-    if (snap.empty) return null;
-    const op = { id: snap.docs[0].id, ...snap.docs[0].data() } as OperadorFS;
+    const found = snap.docs.find(d => (d.data() as OperadorFS).activo);
+    if (!found) return null;
+    const op = { id: found.id, ...found.data() } as OperadorFS;
     await updateDoc(doc(db, 'sucursales', sucursalId, 'operadores', op.id), { ultimoLogin: Date.now() });
     return op;
 };

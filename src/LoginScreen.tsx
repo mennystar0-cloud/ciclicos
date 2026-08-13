@@ -22,14 +22,25 @@ export const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => voi
     }, []);
 
     const loadSucursales = async () => {
-        const list = await fbGetSucursales();
-        setSucursales(list.filter((s: any) => s.activa));
+        try {
+            const list = await fbGetSucursales();
+            setSucursales(list.filter((s: any) => s.activa !== false));
+        } catch (err: any) {
+            console.error('loadSucursales error:', err);
+        }
     };
 
     const loadOperadoresSucursal = async (sucursalId: string) => {
         setLoading(true);
-        const list = await fbGetOperadores(sucursalId);
-        setOperadores(list.filter((o: any) => o.activo));
+        try {
+            const list = await fbGetOperadores(sucursalId);
+            setOperadores(list.filter((o: any) => o.activo !== false));
+        } catch (err: any) {
+            console.error('loadOperadoresSucursal error:', err);
+            setError('Error al cargar operadores: ' + (err?.message ?? err));
+            setLoading(false);
+            throw err;
+        }
         setLoading(false);
     };
 
@@ -89,6 +100,8 @@ export const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => voi
             </div>
 
             <div className="w-full max-w-sm bg-white/10 backdrop-blur-xl rounded-3xl p-6 border border-white/20 shadow-2xl">
+
+                {error && mode === 'main' && <p className="text-red-400 text-sm text-center mb-3 bg-red-500/10 rounded-xl p-2">{error}</p>}
 
                 {mode === 'main' && sucursal && (
                     <div className="space-y-3">

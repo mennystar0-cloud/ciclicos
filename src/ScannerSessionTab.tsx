@@ -2,9 +2,10 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { fbAddScan, fbAddSessionScan, fbCreateScanSession, fbDeleteScan, fbDeleteSession, fbSubscribeToSession, fbSubscribeToSessionItems, fbUpdateSessionLastSeen, fbUndoSessionItem } from './firebase.ts';
 import { tryDecodeStructuredBarcode, formatDate } from './utils.ts';
 import { decodeRopaBarcode, formatTallaFromVkey } from './ropaUtils.ts';
-import { Camera, CameraOff, Check, Download, MapPin, PlayCircle, QrCode, RefreshCw, Users, VolumeX, Volume2, Zap, X, AlertTriangle } from './icons.tsx';
+import { Camera, CameraOff, Check, Download, MapPin, PlayCircle, QrCode, RefreshCw, Users, VolumeX, Volume2, Zap, X, AlertTriangle, Undo2 } from './icons.tsx';
 import type { Folio, Catalog, ColorMap, Scan, ToastType, ScanSession, SessionItem } from './types.ts';
 import type { AppSession } from './session.ts';
+import { useConfirm } from './hooks.tsx';
 export const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession, sucursalId }: {
     colors: ColorMap; catalog: Catalog;
     folio: Folio | null;

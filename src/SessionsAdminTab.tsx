@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { fbDeleteSession, fbGetLastOpenFolio, fbGetScans, fbGetSessionItems, fbAddScan, fbAddScansBatch } from './firebase.ts';
 import { tryDecodeStructuredBarcode, formatDate } from './utils.ts';
-import { decodeRopaBarcode } from './ropaUtils.ts';
-import { ChevronUp, Download, Eye, RefreshCw, Upload, Users, Wifi } from './icons.tsx';
+import { decodeRopaBarcode, formatTallaFromVkey } from './ropaUtils.ts';
+import { BarChart3, ChevronUp, Download, Eye, RefreshCw, Trash2, Upload, Users, Wifi } from './icons.tsx';
 import { CoverageRing } from './CoverageRing.tsx';
 import { useConfirm } from './hooks.tsx';
 import type { Folio, Scan, ColorMap, Catalog, ToastType, ScanSession, SessionItem } from './types.ts';

@@ -1,5 +1,5 @@
 @echo off
-cd /d "C:\Users\menny\Documents\Aplicaciones\ciclicos"
+cd /d "%~dp0"
 
 echo.
 echo ==========================================

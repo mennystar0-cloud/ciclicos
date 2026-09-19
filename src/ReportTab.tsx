@@ -67,6 +67,7 @@ export const ReportTab = ({ folio, scans, onTabChange, addToast }: {
             scannedItems: rows.reduce((a, r) => a + r.fis, 0),
             missingItems: rows.filter(r => r.status === 'faltante').reduce((a, r) => a + Math.abs(r.diff), 0),
             sobranteItems: rows.filter(r => r.status === 'sobrante').reduce((a, r) => a + r.diff, 0),
+            parcialMissingItems: rows.filter(r => r.status === 'parcial').reduce((a, r) => a + Math.abs(r.diff), 0),
         };
     }, [folio, scans]);
 
@@ -784,13 +785,13 @@ export const ReportTab = ({ folio, scans, onTabChange, addToast }: {
                 <div className="border-b">
                     <div className="flex overflow-x-auto">
                         {([
-                            { key: 'all',      label: 'Todos',    count: report.rows.length,                                        color: 'text-slate-600 dark:text-slate-300', active: 'border-slate-800 dark:border-slate-200 text-slate-800 dark:text-white' },
-                            { key: 'faltante', label: 'Faltante', count: report.rows.filter(r => r.status === 'faltante').length,   color: 'text-red-500',    active: 'border-red-500 text-red-600' },
-                            { key: 'sobrante', label: 'Sobrante', count: report.rows.filter(r => r.status === 'sobrante').length,   color: 'text-emerald-500',active: 'border-emerald-500 text-emerald-600' },
-                            { key: 'parcial',  label: 'Parcial',  count: report.rows.filter(r => r.status === 'parcial').length,    color: 'text-orange-500', active: 'border-orange-500 text-orange-600' },
-                            { key: 'ok',       label: 'OK',       count: report.rows.filter(r => r.status === 'ok').length,         color: 'text-slate-400',  active: 'border-slate-500 text-slate-600' },
-                            { key: 'ajustes',  label: 'Ajustes',  count: ajustesSugeridos.length,                                  color: 'text-amber-500',  active: 'border-amber-500 text-amber-600' },
-                        ] as const).map(({ key, label, count, color, active }) => (
+                            { key: 'all',      label: 'Todos',    count: report.rows.length,                                        pzas: null,                          color: 'text-slate-600 dark:text-slate-300', active: 'border-slate-800 dark:border-slate-200 text-slate-800 dark:text-white' },
+                            { key: 'faltante', label: 'Faltante', count: report.rows.filter(r => r.status === 'faltante').length,   pzas: report.missingItems,           color: 'text-red-500',    active: 'border-red-500 text-red-600' },
+                            { key: 'sobrante', label: 'Sobrante', count: report.rows.filter(r => r.status === 'sobrante').length,   pzas: report.sobranteItems,          color: 'text-emerald-500',active: 'border-emerald-500 text-emerald-600' },
+                            { key: 'parcial',  label: 'Parcial',  count: report.rows.filter(r => r.status === 'parcial').length,    pzas: report.parcialMissingItems,    color: 'text-orange-500', active: 'border-orange-500 text-orange-600' },
+                            { key: 'ok',       label: 'OK',       count: report.rows.filter(r => r.status === 'ok').length,         pzas: null,                          color: 'text-slate-400',  active: 'border-slate-500 text-slate-600' },
+                            { key: 'ajustes',  label: 'Ajustes',  count: ajustesSugeridos.length,                                  pzas: null,                          color: 'text-amber-500',  active: 'border-amber-500 text-amber-600' },
+                        ] as const).map(({ key, label, count, pzas, color, active }) => (
                             <button key={key} onClick={() => { setFilter(key as any); setSearchMod(''); setSortBy('diff'); setSortDir('asc'); setFilterTalla(''); setFilterColor(''); }}
                                 className={`flex-shrink-0 flex flex-col items-center px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors ${
                                     filter === key
@@ -799,6 +800,7 @@ export const ReportTab = ({ folio, scans, onTabChange, addToast }: {
                                 }`}>
                                 <span className="text-sm font-bold">{count}</span>
                                 <span>{label}</span>
+                                {pzas !== null && pzas > 0 && <span className="text-[9px] opacity-60 font-normal">{pzas.toLocaleString('es-MX')} pzas</span>}
                             </button>
                         ))}
                     </div>

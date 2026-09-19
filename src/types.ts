@@ -1,6 +1,6 @@
 
 export type Role = 'admin' | 'scanner';
-export type Tab = 'folio' | 'existencias' | 'escanear' | 'reporte' | 'consulta' | 'historial' | 'colores' | 'database' | 'info' | 'almacen';
+export type Tab = 'folio' | 'existencias' | 'escanear' | 'sesiones' | 'reporte' | 'consulta' | 'historial' | 'colores' | 'database' | 'info' | 'almacen';
 
 export interface RackAlmacen {
     numero: number;
@@ -53,6 +53,8 @@ export interface Folio {
     existenciasMap: StockMap; // Inventario Físico (Escaneado)
     areaCounters: { [area: string]: number }; // Contadores por área
     createdAt: number;
+    sucursalId?: string;
+    closedAt?: number;
 }
 
 export interface Scan {
@@ -68,6 +70,7 @@ export interface Scan {
     user: string;
     ts: number;
     category?: 'calzado' | 'ropa';
+    sucursalId?: string;
 }
 
 export type ColorMap = { [name: string]: string };

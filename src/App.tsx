@@ -335,8 +335,12 @@ const App: React.FC = () => {
     const handleLogin = async (s: AppSession) => {
         setSession(s);
         if (s.tipo === 'operador') {
-            const f = await fbGetLastOpenFolio(s.sucursalId) as Folio | undefined;
-            if (f) { setFolioId(f.id); setFolio(f); }
+            try {
+                const f = await fbGetLastOpenFolio(s.sucursalId) as Folio | undefined;
+                if (f) { setFolioId(f.id); setFolio(f); }
+            } catch (err) {
+                console.error('fbGetLastOpenFolio error:', err);
+            }
             setActiveTab('escanear');
         } else if (s.tipo === 'admin') {
             setActiveTab('folio');

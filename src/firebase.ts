@@ -180,9 +180,12 @@ export const fbGetLastOpenFolio = async (sucursalId?: string) => {
     const col = sucursalId
         ? collection(db, 'sucursales', sucursalId, 'folios')
         : collection(db, 'folios');
-    const q = query(col, where('state', '==', 'open'), orderBy('createdAt', 'desc'), limit(1));
+    const q = query(col, where('state', '==', 'open'));
     const snap = await getDocs(q);
-    return snap.empty ? undefined : snap.docs[0].data();
+    if (snap.empty) return undefined;
+    const open = snap.docs.map(d => d.data());
+    open.sort((a: any, b: any) => b.createdAt - a.createdAt);
+    return open[0];
 };
 
 export const fbSubscribeToFolio = (id: string, callback: (f: any) => void, sucursalId?: string) => {

@@ -45,16 +45,22 @@ export const ScannerSessionTab = ({ colors, catalog, folio, addToast, appSession
     // Load saved sessions for this device
     useEffect(() => {
         const savedId = localStorage.getItem('conteo:sessionId');
-        if (savedId) {
-            const unsub = fbSubscribeToSession(savedId, (s) => {
-                if (s) setCurrentSession(s as ScanSession);
-            }, sucursalId ?? undefined);
-            const unsubItems = fbSubscribeToSessionItems(savedId, (items) => {
-                setSessionItems(items as SessionItem[]);
-            }, sucursalId ?? undefined);
-            setPhase('scanning');
-            return () => { unsub(); unsubItems(); };
-        }
+        if (!savedId) return;
+        let firstSnapshot = true;
+        const unsub = fbSubscribeToSession(savedId, (s) => {
+            if (s) {
+                setCurrentSession(s as ScanSession);
+                if (firstSnapshot) setPhase('scanning');
+            } else if (firstSnapshot) {
+                // Session no longer exists in Firestore — clean up and stay on menu
+                localStorage.removeItem('conteo:sessionId');
+            }
+            firstSnapshot = false;
+        }, sucursalId ?? undefined);
+        const unsubItems = fbSubscribeToSessionItems(savedId, (items) => {
+            setSessionItems(items as SessionItem[]);
+        }, sucursalId ?? undefined);
+        return () => { unsub(); unsubItems(); };
     }, [sucursalId]);
 
     // Advertencia al cerrar/recargar con sesión activa

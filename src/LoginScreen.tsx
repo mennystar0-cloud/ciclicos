@@ -14,6 +14,7 @@ export const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => voi
     const [sucursales, setSucursales] = React.useState<any[]>([]);
     const [operadores, setOperadores] = React.useState<any[]>([]);
     const [opSeleccionado, setOpSeleccionado] = React.useState<any>(null);
+    const [elegirParaAdmin, setElegirParaAdmin] = React.useState(false);
 
     React.useEffect(() => {
         const saved = localStorage.getItem('conteo:sucursal');
@@ -110,7 +111,7 @@ export const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => voi
                             📷 Escaner
                         </button>
                         <div className="pt-2 border-t border-white/10 space-y-2">
-                            <button onClick={() => { setMode('admin'); setError(''); setUsuario(''); setPassword(''); }}
+                            <button onClick={() => { setMode('admin'); setError(''); setUsuario(sucursal?.usuario ?? ''); setPassword(''); }}
                                 className="w-full bg-white/10 hover:bg-white/20 text-white/80 py-2.5 rounded-xl text-sm flex items-center justify-center gap-2">
                                 🔑 Admin de sucursal
                             </button>
@@ -179,11 +180,11 @@ export const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => voi
 
                 {mode === 'main' && !sucursal && (
                     <div className="space-y-3">
-                        <button onClick={async () => { await loadSucursales(); setMode('elegir'); setError(''); }}
+                        <button onClick={async () => { setElegirParaAdmin(false); await loadSucursales(); setMode('elegir'); setError(''); }}
                             className="w-full bg-sky-500 hover:bg-sky-400 text-white py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 active:scale-95">
                             📷 Escaner
                         </button>
-                        <button onClick={() => { setMode('admin'); setError(''); }}
+                        <button onClick={async () => { setElegirParaAdmin(true); await loadSucursales(); setMode('elegir'); setError(''); }}
                             className="w-full bg-white/15 hover:bg-white/25 text-white py-3 rounded-2xl font-semibold flex items-center justify-center gap-2 active:scale-95">
                             🔑 Admin de Sucursal
                         </button>
@@ -197,10 +198,10 @@ export const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => voi
                 {mode === 'elegir' && (
                     <div className="space-y-4">
                         <div className="flex items-center gap-3 mb-2">
-                            <button onClick={() => { setMode('main'); setError(''); }} className="text-white/60 hover:text-white text-xl">←</button>
+                            <button onClick={() => { setMode('main'); setError(''); setElegirParaAdmin(false); }} className="text-white/60 hover:text-white text-xl">←</button>
                             <div>
                                 <p className="text-white font-bold">Selecciona tu sucursal</p>
-                                <p className="text-white/50 text-xs">Luego ingresa tu PIN</p>
+                                <p className="text-white/50 text-xs">{elegirParaAdmin ? 'Luego ingresa tu contraseña' : 'Luego ingresa tu PIN'}</p>
                             </div>
                         </div>
                         {sucursales.length === 0 && (
@@ -212,10 +213,18 @@ export const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => voi
                                     onClick={async () => {
                                         localStorage.setItem('conteo:sucursal', JSON.stringify(s));
                                         setSucursal(s);
-                                        await loadOperadoresSucursal(s.id);
-                                        setOpSeleccionado(null);
-                                        setMode('operador');
-                                        setError('');
+                                        if (elegirParaAdmin) {
+                                            setUsuario(s.usuario);
+                                            setPassword('');
+                                            setElegirParaAdmin(false);
+                                            setMode('admin');
+                                            setError('');
+                                        } else {
+                                            await loadOperadoresSucursal(s.id);
+                                            setOpSeleccionado(null);
+                                            setMode('operador');
+                                            setError('');
+                                        }
                                     }}
                                     className="w-full bg-white/15 hover:bg-white/25 text-white py-4 rounded-2xl flex items-center gap-3 px-4 active:scale-95 transition-all">
                                     <div className="w-10 h-10 rounded-xl bg-sky-500/30 flex items-center justify-center flex-shrink-0">
@@ -223,7 +232,7 @@ export const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => voi
                                     </div>
                                     <div className="text-left">
                                         <p className="font-bold">{s.nombre}</p>
-                                        <p className="text-white/50 text-xs">Toca para seleccionar</p>
+                                        <p className="text-white/50 text-xs">{elegirParaAdmin ? 'Admin de sucursal' : 'Toca para seleccionar'}</p>
                                     </div>
                                     <span className="ml-auto text-white/40">→</span>
                                 </button>
@@ -270,8 +279,16 @@ export const LoginScreen = ({ onLogin }: { onLogin: (session: AppSession) => voi
                                 <p className="text-white/50 text-xs">Ingresa tus credenciales</p>
                             </div>
                         </div>
-                        <input className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/40 text-sm focus:outline-none focus:border-sky-400"
-                            placeholder="Usuario" value={usuario} onChange={e => setUsuario(e.target.value)} autoFocus />
+                        {sucursal?.usuario && sucursal.usuario === usuario ? (
+                            <div className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 flex items-center gap-2">
+                                <span className="text-[10px] text-white/40 uppercase font-bold tracking-wide">Sucursal</span>
+                                <span className="text-white font-bold text-sm flex-1">{sucursal.nombre}</span>
+                                <span className="text-white/30 text-xs">@{usuario}</span>
+                            </div>
+                        ) : (
+                            <input className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/40 text-sm focus:outline-none focus:border-sky-400"
+                                placeholder="Usuario" value={usuario} onChange={e => setUsuario(e.target.value)} autoFocus />
+                        )}
                         <input type="password" className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/40 text-sm focus:outline-none focus:border-sky-400"
                             placeholder="Contrasena" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => { if (e.key==='Enter') handleAdminLogin(); }} />
                         {error && <p className="text-red-400 text-sm text-center">{error}</p>}

@@ -2,6 +2,7 @@
 import { splitKey, getSizeCode } from './utils.ts';
 import { formatTallaConCategoria, formatTallaFromVkey, ALL_ROPA_MAPS } from './ropaUtils.ts';
 import { CoverageRing } from './CoverageRing.tsx';
+import { CustomReportModal } from './CustomReportModal.tsx';
 import {
     BarChart3, Search, Package, Check, AlertTriangle, Printer,
     ChevronUp, ChevronRight, ChevronDown, FileText, Download,
@@ -38,6 +39,7 @@ export const ReportTab = ({ folio, scans, onTabChange, addToast }: {
     const [printMode, setPrintMode] = useState<'completo' | 'simplificado'>('completo');
     const [vista, setVista] = useState<'reporte' | 'ajustes'>('reporte');
     const [showPrintModal, setShowPrintModal] = useState(false);
+    const [showCustomReport, setShowCustomReport] = useState(false);
     const [ajusteSearch, setAjusteSearch] = useState('');
     const [ajusteTipoFil, setAjusteTipoFil] = useState<'all' | 'talla' | 'color'>('all');
     const [ajusteChecked, setAjusteChecked] = useState<Set<number>>(new Set());
@@ -93,6 +95,18 @@ export const ReportTab = ({ folio, scans, onTabChange, addToast }: {
             return mul * (a.diff - b.diff);
         });
     }, [report.rows, filter, searchMod, sortBy, sortDir, filterTalla, filterColor]);
+
+    // Filas con búsqueda / talla / color de pantalla, sin filtro de estado (para el reporte personalizado)
+    const hasActiveFilters = !!(searchMod.trim() || filterTalla || filterColor);
+    const rowsConFiltros = useMemo(() => report.rows.filter(r => {
+        if (searchMod.trim()) {
+            const q = searchMod.trim().toLowerCase();
+            if (!r.mod.toLowerCase().includes(q) && !r.color.toLowerCase().includes(q)) return false;
+        }
+        if (filterTalla && formatTallaConCategoria(r.talla, r.vkey) !== filterTalla) return false;
+        if (filterColor && r.color !== filterColor) return false;
+        return true;
+    }), [report.rows, searchMod, filterTalla, filterColor]);
 
     const ajustesSugeridos = useMemo(() => {
         if (!folio) return [];
@@ -859,6 +873,19 @@ export const ReportTab = ({ folio, scans, onTabChange, addToast }: {
                                     }</strong>
                                 </div>
 
+                                {/* Opción 0: Personalizado — el usuario elige secciones */}
+                                <button onClick={() => { setShowPrintModal(false); setShowCustomReport(true); }}
+                                    className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-b dark:border-slate-700">
+                                    <div className="w-10 h-10 rounded-xl bg-violet-50 dark:bg-violet-900/20 flex items-center justify-center flex-shrink-0">
+                                        <Check size={20} className="text-violet-500" />
+                                    </div>
+                                    <div className="flex-1 text-left">
+                                        <p className="text-sm font-semibold text-slate-800 dark:text-white">Personalizado <span className="text-[10px] bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full font-bold ml-1">Nuevo</span></p>
+                                        <p className="text-xs text-slate-400 mt-0.5">Elige secciones: resumen, áreas, operadores, faltantes, sobrantes…</p>
+                                    </div>
+                                    <ChevronRight size={16} className="text-slate-300" />
+                                </button>
+
                                 {/* Opción 1: Completo — imprime lo que está viendo */}
                                 <button onClick={() => { setShowPrintModal(false); handlePrint(filter === 'ajustes' ? 'ajustes' : 'completo'); }}
                                     className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border-b dark:border-slate-700">
@@ -921,6 +948,19 @@ export const ReportTab = ({ folio, scans, onTabChange, addToast }: {
                     </div>
                 )}
             </div>
+
+            {showCustomReport && (
+                <CustomReportModal
+                    folio={folio}
+                    rows={report.rows}
+                    filteredRows={rowsConFiltros}
+                    hasActiveFilters={hasActiveFilters}
+                    scans={scans}
+                    ajustes={ajustesSugeridos}
+                    onClose={() => setShowCustomReport(false)}
+                    addToast={addToast}
+                />
+            )}
 
             {/* Vista Ajustes Posibles */}
             {vista === 'ajustes' && (
